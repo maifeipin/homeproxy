@@ -316,7 +316,7 @@ function generate_outbound(node) {
 				short_id: node.tls_reality_short_id
 			} : null
 		} : null,
-		transport: !isEmpty(node.transport) ? {
+		transport: (!isEmpty(node.transport) && node.transport !== "raw") ? {
 			type: node.transport,
 			host: node.http_host || node.httpupgrade_host,
 			path: node.http_path || node.ws_path,
@@ -831,6 +831,20 @@ if (!isEmpty(main_node)) {
 			action: 'route',
 			outbound: 'main-udp-out'
 		});
+
+	/* Mainland China bypass */
+	if (routing_mode === 'bypass_mainland_china') {
+		push(config.route.rules, {
+			rule_set: "geosite-cn",
+			action: "route",
+			outbound: "direct-out"
+		});
+		push(config.route.rules, {
+			rule_set: "geoip-cn",
+			action: "route",
+			outbound: "direct-out"
+		});
+	}
 
 	config.route.final = 'main-out';
 
