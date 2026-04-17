@@ -125,7 +125,6 @@ return view.extend({
 		for (let i in proxy_nodes)
 			o.value(i, proxy_nodes[i]);
 		o.default = 'nil';
-		o.depends({'routing_mode': 'custom', '!reverse': true});
 		o.rmempty = false;
 
 		o = s.taboption('routing', hp.CBIStaticList, 'main_urltest_nodes', _('URLTest nodes'),
@@ -154,7 +153,7 @@ return view.extend({
 		for (let i in proxy_nodes)
 			o.value(i, proxy_nodes[i]);
 		o.default = 'nil';
-		o.depends({'routing_mode': /^((?!custom).)+$/, 'proxy_mode': /^((?!redirect$).)+$/});
+		o.depends('proxy_mode', /^((?!redirect$).)+$/);
 		o.rmempty = false;
 
 		o = s.taboption('routing', hp.CBIStaticList, 'main_udp_urltest_nodes', _('URLTest nodes'),
@@ -188,7 +187,6 @@ return view.extend({
 		o.value('117.50.10.10', _('ThreatBook Public DNS (117.50.10.10)'));
 		o.default = '8.8.8.8';
 		o.rmempty = false;
-		o.depends({'routing_mode': 'custom', '!reverse': true});
 		o.validate = function(section_id, value) {
 			if (section_id && !['wan'].includes(value)) {
 				if (!value)
@@ -221,7 +219,6 @@ return view.extend({
 		o.value('210.2.4.8', _('CNNIC Public DNS (210.2.4.8)'));
 		o.value('119.29.29.29', _('Tencent Public DNS (119.29.29.29)'));
 		o.value('117.50.10.10', _('ThreatBook Public DNS (117.50.10.10)'));
-		o.depends('routing_mode', 'bypass_mainland_china');
 		o.default = '223.5.5.5';
 		o.rmempty = false;
 		o.validate = function(section_id, value) {
@@ -256,6 +253,19 @@ return view.extend({
 		o.value('global', _('Global'));
 		o.default = 'bypass_mainland_china';
 		o.rmempty = false;
+
+		o = s.taboption('routing', form.Value, 'dashboard_port', _('Dashboard Port'),
+			_('Port for the external dashboard API. Default is 9090.'));
+		o.datatype = 'port';
+		o.placeholder = '9090';
+		o.default = '9090';
+
+		o = s.taboption('routing', form.Value, 'dashboard_secret', _('Dashboard Secret'),
+			_('Secret for the external dashboard API.'));
+		o.password = true;
+		o.placeholder = 'password';
+		o.default = 'password';
+
 		o.onchange = function(ev, section_id, value) {
 			if (section_id && value === 'custom')
 				this.map.save(null, true);
@@ -301,7 +311,6 @@ return view.extend({
 		/* Custom routing settings start */
 		/* Routing settings start */
 		o = s.taboption('routing', form.SectionValue, '_routing', form.NamedSection, 'routing', 'homeproxy');
-		o.depends('routing_mode', 'custom');
 
 		ss = o.subsection;
 		so = ss.option(form.ListValue, 'tcpip_stack', _('TCP/IP stack'),
@@ -566,7 +575,6 @@ return view.extend({
 		/* Routing rules start */
 		s.tab('routing_rule', _('Routing Rules'));
 		o = s.taboption('routing_rule', form.SectionValue, '_routing_rule', form.GridSection, 'routing_rule');
-		o.depends('routing_mode', 'custom');
 
 		ss = o.subsection;
 		ss.addremove = true;
@@ -692,6 +700,24 @@ return view.extend({
 		so.rmempty = false;
 		so.depends('action', 'route');
 		so.editable = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'dns_server', _('Assigned DNS Server'),
+			_('Specifies the DNS server for this routing rule.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('', _('Default'));
+			this.value('default-dns', _('Default DNS (issued by WAN)'));
+			this.value('system-dns', _('System DNS'));
+			uci.sections(data[0], 'dns_server', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.modalonly = true;
 
 		so = ss.taboption('field_other', form.Value, 'override_address', _('Override address'),
 			_('Override the connection destination address.'));
@@ -871,7 +897,6 @@ return view.extend({
 		/* DNS settings start */
 		s.tab('dns', _('DNS Settings'));
 		o = s.taboption('dns', form.SectionValue, '_dns', form.NamedSection, 'dns', 'homeproxy');
-		o.depends('routing_mode', 'custom');
 
 		ss = o.subsection;
 		so = ss.option(form.ListValue, 'default_strategy', _('Default DNS strategy'),
@@ -923,7 +948,6 @@ return view.extend({
 		/* DNS servers start */
 		s.tab('dns_server', _('DNS Servers'));
 		o = s.taboption('dns_server', form.SectionValue, '_dns_server', form.GridSection, 'dns_server');
-		o.depends('routing_mode', 'custom');
 
 		ss = o.subsection;
 		ss.addremove = true;
@@ -1046,7 +1070,6 @@ return view.extend({
 		/* DNS rules start */
 		s.tab('dns_rule', _('DNS Rules'));
 		o = s.taboption('dns_rule', form.SectionValue, '_dns_rule', form.GridSection, 'dns_rule');
-		o.depends('routing_mode', 'custom');
 
 		ss = o.subsection;
 		ss.addremove = true;

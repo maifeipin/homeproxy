@@ -210,7 +210,7 @@ function parseShareLink(uri, features) {
 				address: url.hostname,
 				port: url.port || '80',
 				password: decodeURIComponent(url.username),
-				transport: params.get('type') !== 'tcp' ? params.get('type') : null,
+				transport: !['tcp', 'raw'].includes(params.get('type')) ? params.get('type') : null,
 				tls: '1',
 				tls_sni: params.get('sni')
 			};
@@ -274,7 +274,7 @@ function parseShareLink(uri, features) {
 				address: url.hostname,
 				port: url.port || '80',
 				uuid: url.username,
-				transport: params.get('type') !== 'tcp' ? params.get('type') : null,
+				transport: !['tcp', 'raw'].includes(params.get('type')) ? params.get('type') : null,
 				tls: ['tls', 'xtls', 'reality'].includes(params.get('security')) ? '1' : '0',
 				tls_sni: params.get('sni'),
 				tls_alpn: params.get('alpn') ? decodeURIComponent(params.get('alpn')).split(',') : null,
@@ -339,7 +339,7 @@ function parseShareLink(uri, features) {
 				uuid: uri.id,
 				vmess_alterid: uri.aid,
 				vmess_encrypt: uri.scy || 'auto',
-				transport: (uri.net !== 'tcp') ? uri.net : null,
+				transport: !['tcp', 'raw'].includes(uri.net) ? uri.net : null,
 				tls: uri.tls === 'tls' ? '1' : '0',
 				tls_sni: uri.sni || uri.host,
 				tls_alpn: uri.alpn ? uri.alpn.split(',') : null,

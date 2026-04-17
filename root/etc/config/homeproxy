@@ -33,6 +33,8 @@ config homeproxy 'config'
 	option ipv6_support '1'
 	option github_token ''
 	option log_level 'warn'
+	option dashboard_port '9090'
+	option dashboard_secret 'password'
 
 config homeproxy 'control'
 	option lan_proxy_mode 'disabled'

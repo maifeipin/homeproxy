@@ -58,7 +58,10 @@ let main_node, main_udp_node, dedicated_udp_node, default_outbound, default_outb
     domain_strategy, sniff_override, dns_server, china_dns_server, dns_default_strategy,
     dns_default_server, dns_disable_cache, dns_disable_cache_expire, dns_independent_cache,
     dns_client_subnet, cache_file_store_rdrc, cache_file_rdrc_timeout, direct_domain_list,
-    proxy_domain_list;
+    proxy_domain_list, dashboard_port, dashboard_secret;
+
+dashboard_port = uci.get(uciconfig, ucimain, 'dashboard_port') || '9090';
+dashboard_secret = uci.get(uciconfig, ucimain, 'dashboard_secret') || 'password';
 
 if (routing_mode !== 'custom') {
 	main_node = uci.get(uciconfig, ucimain, 'main_node') || 'nil';
@@ -899,58 +902,85 @@ if (!isEmpty(main_node)) {
 
 	if (isEmpty(config.route.rule_set))
 		config.route.rule_set = null;
-} else if (!isEmpty(default_outbound)) {
+}
+
+/* Priority Global Rules (Unified Architecture) */
+uci.foreach(uciconfig, uciroutingrule, (cfg) => {
+	if (cfg.enabled !== '1')
+		return null;
+
+	let rule = {
+		ip_version: strToInt(cfg.ip_version),
+		protocol: cfg.protocol,
+		network: cfg.network,
+		domain: cfg.domain,
+		domain_suffix: cfg.domain_suffix,
+		domain_keyword: cfg.domain_keyword,
+		domain_regex: cfg.domain_regex,
+		source_ip_cidr: cfg.source_ip_cidr,
+		source_ip_is_private: strToBool(cfg.source_ip_is_private),
+		ip_cidr: cfg.ip_cidr,
+		ip_is_private: strToBool(cfg.ip_is_private),
+		source_port: parse_port(cfg.source_port),
+		source_port_range: cfg.source_port_range,
+		port: parse_port(cfg.port),
+		port_range: cfg.port_range,
+		process_name: cfg.process_name,
+		process_path: cfg.process_path,
+		process_path_regex: cfg.process_path_regex,
+		user: cfg.user,
+		rule_set: get_ruleset(cfg.rule_set),
+		rule_set_ip_cidr_match_source: strToBool(cfg.rule_set_ip_cidr_match_source),
+		rule_set_ip_cidr_accept_empty: strToBool(cfg.rule_set_ip_cidr_accept_empty),
+		invert: strToBool(cfg.invert),
+		action: cfg.action,
+		outbound: get_outbound(cfg.outbound),
+		override_address: cfg.override_address,
+		override_port: strToInt(cfg.override_port),
+		udp_disable_domain_unmapping: strToBool(cfg.udp_disable_domain_unmapping),
+		udp_connect: strToBool(cfg.udp_connect),
+		udp_timeout: strToTime(cfg.udp_timeout),
+		tls_fragment: strToBool(cfg.tls_fragment),
+		tls_fragment_fallback_delay: strToTime(cfg.tls_fragment_fallback_delay),
+		tls_record_fragment: strToBool(cfg.tls_record_fragment)
+	};
+
+	push(config.route.rules, rule);
+
+	/* Implement assigned DNS server for this rule */
+	if (!isEmpty(cfg.dns_server)) {
+		let dns_rule = {
+			ip_version: rule.ip_version,
+			network: rule.network,
+			protocol: rule.protocol,
+			domain: rule.domain,
+			domain_suffix: rule.domain_suffix,
+			domain_keyword: rule.domain_keyword,
+			domain_regex: rule.domain_regex,
+			source_ip_cidr: rule.source_ip_cidr,
+			source_ip_is_private: rule.source_ip_is_private,
+			port: rule.port,
+			port_range: rule.port_range,
+			source_port: rule.source_port,
+			source_port_range: rule.source_port_range,
+			process_name: rule.process_name,
+			process_path: rule.process_path,
+			process_path_regex: rule.process_path_regex,
+			user: rule.user,
+			rule_set: rule.rule_set,
+			invert: rule.invert,
+			action: 'route',
+			server: get_resolver(cfg.dns_server)
+		};
+		push(config.dns.rules, dns_rule);
+	}
+});
+
+if (!isEmpty(default_outbound)) {
 	config.route.default_domain_resolver = {
 		action: 'resolve',
 		server: get_resolver(default_outbound_dns)
 	};
-
-	if (domain_strategy)
-		push(config.route.rules, {
-			action: 'resolve',
-			strategy: domain_strategy
-		});
-
-	uci.foreach(uciconfig, uciroutingrule, (cfg) => {
-		if (cfg.enabled !== '1')
-			return null;
-
-		push(config.route.rules, {
-			ip_version: strToInt(cfg.ip_version),
-			protocol: cfg.protocol,
-			network: cfg.network,
-			domain: cfg.domain,
-			domain_suffix: cfg.domain_suffix,
-			domain_keyword: cfg.domain_keyword,
-			domain_regex: cfg.domain_regex,
-			source_ip_cidr: cfg.source_ip_cidr,
-			source_ip_is_private: strToBool(cfg.source_ip_is_private),
-			ip_cidr: cfg.ip_cidr,
-			ip_is_private: strToBool(cfg.ip_is_private),
-			source_port: parse_port(cfg.source_port),
-			source_port_range: cfg.source_port_range,
-			port: parse_port(cfg.port),
-			port_range: cfg.port_range,
-			process_name: cfg.process_name,
-			process_path: cfg.process_path,
-			process_path_regex: cfg.process_path_regex,
-			user: cfg.user,
-			rule_set: get_ruleset(cfg.rule_set),
-			rule_set_ip_cidr_match_source: strToBool(cfg.rule_set_ip_cidr_match_source),
-			rule_set_ip_cidr_accept_empty: strToBool(cfg.rule_set_ip_cidr_accept_empty),
-			invert: strToBool(cfg.invert),
-			action: cfg.action,
-			outbound: get_outbound(cfg.outbound),
-			override_address: cfg.override_address,
-			override_port: strToInt(cfg.override_port),
-			udp_disable_domain_unmapping: strToBool(cfg.udp_disable_domain_unmapping),
-			udp_connect: strToBool(cfg.udp_connect),
-			udp_timeout: strToTime(cfg.udp_timeout),
-			tls_fragment: strToBool(cfg.tls_fragment),
-			tls_fragment_fallback_delay: strToTime(cfg.tls_fragment_fallback_delay),
-			tls_record_fragment: strToBool(cfg.tls_record_fragment)
-		});
-	});
 
 	config.route.final = get_outbound(default_outbound);
 
@@ -973,16 +1003,20 @@ if (!isEmpty(main_node)) {
 /* Routing rules end */
 
 /* Experimental start */
-if (routing_mode in ['bypass_mainland_china', 'custom']) {
-	config.experimental = {
-		cache_file: {
-			enabled: true,
-			path: RUN_DIR + '/cache.db',
-			store_rdrc: strToBool(cache_file_store_rdrc),
-			rdrc_timeout: strToTime(cache_file_rdrc_timeout),
-		}
-	};
-}
+config.experimental = {
+	cache_file: {
+		enabled: true,
+		path: RUN_DIR + '/cache.db',
+		store_rdrc: strToBool(cache_file_store_rdrc),
+		rdrc_timeout: strToTime(cache_file_rdrc_timeout),
+	},
+	clash_api: {
+		external_controller: '0.0.0.0:' + dashboard_port,
+		external_ui: 'ui',
+		secret: dashboard_secret,
+		default_mode: 'rule'
+	}
+};
 /* Experimental end */
 
 system('mkdir -p ' + RUN_DIR);
