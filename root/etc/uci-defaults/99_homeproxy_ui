@@ -3,4 +3,39 @@
 # Create symbolic link for HomeProxy dashboard
 [ -d /etc/homeproxy/ui ] && [ ! -L /www/hp ] && ln -s /etc/homeproxy/ui /www/hp
 
+# Set default routing mode to Custom
+uci set homeproxy.config.routing_mode='custom'
+
+# Pre-seed Master Edition Routing Rules
+if ! uci -q get homeproxy.rule_cn_site >/dev/null; then
+	uci set homeproxy.rule_cn_site=routing_rule
+	uci set homeproxy.rule_cn_site.label='[Master] CN Site Direct'
+	uci set homeproxy.rule_cn_site.enabled='1'
+	uci add_list homeproxy.rule_cn_site.rule_set='geosite-cn'
+	uci set homeproxy.rule_cn_site.action='route'
+	uci set homeproxy.rule_cn_site.outbound='direct-out'
+fi
+
+if ! uci -q get homeproxy.rule_cn_ip >/dev/null; then
+	uci set homeproxy.rule_cn_ip=routing_rule
+	uci set homeproxy.rule_cn_ip.label='[Master] CN IP Direct'
+	uci set homeproxy.rule_cn_ip.enabled='1'
+	uci add_list homeproxy.rule_cn_ip.rule_set='geoip-cn'
+	uci set homeproxy.rule_cn_ip.action='route'
+	uci set homeproxy.rule_cn_ip.outbound='direct-out'
+fi
+
+# Pre-seed Master Edition DNS Rules
+if ! uci -q get homeproxy.dns_rule_cn >/dev/null; then
+	uci set homeproxy.dns_rule_cn=dns_rule
+	uci set homeproxy.dns_rule_cn.label='[Master] CN Domain Resolve'
+	uci set homeproxy.dns_rule_cn.enabled='1'
+	uci add_list homeproxy.dns_rule_cn.rule_set='geosite-cn'
+	uci set homeproxy.dns_rule_cn.action='route'
+	uci set homeproxy.dns_rule_cn.server='china-dns'
+fi
+
+# Apply changes
+uci commit homeproxy
+
 exit 0

@@ -11,6 +11,7 @@
 'require rpc';
 'require uci';
 'require validation';
+'require ui';
 'require view';
 
 'require homeproxy as hp';
@@ -266,10 +267,7 @@ return view.extend({
 		o.placeholder = 'password';
 		o.default = 'password';
 
-		o.onchange = function(ev, section_id, value) {
-			if (section_id && value === 'custom')
-				this.map.save(null, true);
-		}
+
 
 		o = s.taboption('routing', form.Value, 'routing_port', _('Routing ports'),
 			_('Specify target ports to be proxied. Multiple ports must be separated by commas.'));
@@ -404,7 +402,7 @@ return view.extend({
 		/* Routing nodes start */
 		s.tab('routing_node', _('Routing Nodes'));
 		o = s.taboption('routing_node', form.SectionValue, '_routing_node', form.GridSection, 'routing_node');
-		o.depends('routing_mode', 'custom');
+
 
 		ss = o.subsection;
 		ss.addremove = true;
@@ -424,6 +422,25 @@ return view.extend({
 		so.default = so.enabled;
 		so.rmempty = false;
 		so.editable = true;
+
+		so = ss.option(form.Button, '_copy', _('Copy'));
+		so.inputstyle = 'apply';
+		so.onclick = L.bind(function(ev, section_id) {
+			let mode = uci.get('homeproxy', section_id, '.type');
+			let new_sid = uci.add('homeproxy', mode);
+			let values = uci.get('homeproxy', section_id);
+			for (let key in values) {
+				if (key.indexOf('.') !== 0) {
+					let val = values[key];
+					if (key === 'label') val += ' (Copy)';
+					uci.set('homeproxy', new_sid, key, val);
+				}
+			}
+			return uci.save().then(() => {
+				ui.addNotification(null, E('p', _('Section duplicated!')), 'info');
+				return m.render();
+			});
+		}, this);
 
 		so = ss.option(form.ListValue, 'node', _('Node'),
 			_('Outbound node'));
@@ -599,6 +616,25 @@ return view.extend({
 		so.default = so.enabled;
 		so.rmempty = false;
 		so.editable = true;
+
+		so = ss.taboption('field_other', form.Button, '_copy', _('Copy'));
+		so.inputstyle = 'apply';
+		so.onclick = L.bind(function(ev, section_id) {
+			let mode = uci.get('homeproxy', section_id, '.type');
+			let new_sid = uci.add('homeproxy', mode);
+			let values = uci.get('homeproxy', section_id);
+			for (let key in values) {
+				if (key.indexOf('.') !== 0) {
+					let val = values[key];
+					if (key === 'label') val += ' (Copy)';
+					uci.set('homeproxy', new_sid, key, val);
+				}
+			}
+			return uci.save().then(() => {
+				ui.addNotification(null, E('p', _('Section duplicated!')), 'info');
+				return m.render();
+			});
+		}, this);
 
 		so = ss.taboption('field_other', form.ListValue, 'mode', _('Mode'),
 			_('The default rule uses the following matching logic:<br/>' +
@@ -968,6 +1004,25 @@ return view.extend({
 		so.rmempty = false;
 		so.editable = true;
 
+		so = ss.option(form.Button, '_copy', _('Copy'));
+		so.inputstyle = 'apply';
+		so.onclick = L.bind(function(ev, section_id) {
+			let mode = uci.get('homeproxy', section_id, '.type');
+			let new_sid = uci.add('homeproxy', mode);
+			let values = uci.get('homeproxy', section_id);
+			for (let key in values) {
+				if (key.indexOf('.') !== 0) {
+					let val = values[key];
+					if (key === 'label') val += ' (Copy)';
+					uci.set('homeproxy', new_sid, key, val);
+				}
+			}
+			return uci.save().then(() => {
+				ui.addNotification(null, E('p', _('Section duplicated!')), 'info');
+				return m.render();
+			});
+		}, this);
+
 		so = ss.option(form.ListValue, 'type', _('Type'));
 		so.value('udp', _('UDP'));
 		so.value('tcp', _('TCP'));
@@ -1094,6 +1149,25 @@ return view.extend({
 		so.default = so.enabled;
 		so.rmempty = false;
 		so.editable = true;
+
+		so = ss.taboption('field_other', form.Button, '_copy', _('Copy'));
+		so.inputstyle = 'apply';
+		so.onclick = L.bind(function(ev, section_id) {
+			let mode = uci.get('homeproxy', section_id, '.type');
+			let new_sid = uci.add('homeproxy', mode);
+			let values = uci.get('homeproxy', section_id);
+			for (let key in values) {
+				if (key.indexOf('.') !== 0) {
+					let val = values[key];
+					if (key === 'label') val += ' (Copy)';
+					uci.set('homeproxy', new_sid, key, val);
+				}
+			}
+			return uci.save().then(() => {
+				ui.addNotification(null, E('p', _('Section duplicated!')), 'info');
+				return m.render();
+			});
+		}, this);
 
 		so = ss.taboption('field_other', form.ListValue, 'mode', _('Mode'),
 			_('The default rule uses the following matching logic:<br/>' +
@@ -1333,7 +1407,7 @@ return view.extend({
 		/* Rule set settings start */
 		s.tab('ruleset', _('Rule Set'));
 		o = s.taboption('ruleset', form.SectionValue, '_ruleset', form.GridSection, 'ruleset');
-		o.depends('routing_mode', 'custom');
+
 
 		ss = o.subsection;
 		ss.addremove = true;
@@ -1353,6 +1427,25 @@ return view.extend({
 		so.default = so.enabled;
 		so.rmempty = false;
 		so.editable = true;
+
+		so = ss.option(form.Button, '_copy', _('Copy'));
+		so.inputstyle = 'apply';
+		so.onclick = L.bind(function(ev, section_id) {
+			let mode = uci.get('homeproxy', section_id, '.type');
+			let new_sid = uci.add('homeproxy', mode);
+			let values = uci.get('homeproxy', section_id);
+			for (let key in values) {
+				if (key.indexOf('.') !== 0) {
+					let val = values[key];
+					if (key === 'label') val += ' (Copy)';
+					uci.set('homeproxy', new_sid, key, val);
+				}
+			}
+			return uci.save().then(() => {
+				ui.addNotification(null, E('p', _('Section duplicated!')), 'info');
+				return m.render();
+			});
+		}, this);
 
 		so = ss.option(form.ListValue, 'type', _('Type'));
 		so.value('local', _('Local'));
@@ -1474,13 +1567,13 @@ return view.extend({
 		so = fwtool.addMACOption(ss, 'lan_ip_policy', 'lan_gaming_mode_mac_addrs', _('Gaming mode MAC-s'), null, hosts);
 
 		so = fwtool.addIPOption(ss, 'lan_ip_policy', 'lan_global_proxy_ipv4_ips', _('Global proxy IPv4 IP-s'), null, 'ipv4', hosts, true);
-		so.depends({'homeproxy.config.routing_mode': 'custom', '!reverse': true});
+
 
 		so = fwtool.addIPOption(ss, 'lan_ip_policy', 'lan_global_proxy_ipv6_ips', _('Global proxy IPv6 IP-s'), null, 'ipv6', hosts, true);
-		so.depends({'homeproxy.config.routing_mode': /^((?!custom).)+$/, 'homeproxy.config.ipv6_support': '1'});
+		so.depends('homeproxy.config.ipv6_support', '1');
 
 		so = fwtool.addMACOption(ss, 'lan_ip_policy', 'lan_global_proxy_mac_addrs', _('Global proxy MAC-s'), null, hosts);
-		so.depends({'homeproxy.config.routing_mode': 'custom', '!reverse': true});
+
 		/* LAN IP policy end */
 
 		/* WAN IP policy start */
@@ -1508,7 +1601,7 @@ return view.extend({
 		so.rows = 10;
 		so.monospace = true;
 		so.datatype = 'hostname';
-		so.depends({'homeproxy.config.routing_mode': 'custom', '!reverse': true});
+
 		so.load = function(/* ... */) {
 			return L.resolveDefault(callReadDomainList('proxy_list')).then((res) => {
 				return res.content;
@@ -1540,7 +1633,7 @@ return view.extend({
 		so.rows = 10;
 		so.monospace = true;
 		so.datatype = 'hostname';
-		so.depends({'homeproxy.config.routing_mode': 'custom', '!reverse': true});
+
 		so.load = function(/* ... */) {
 			return L.resolveDefault(callReadDomainList('direct_list')).then((res) => {
 				return res.content;
