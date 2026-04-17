@@ -161,13 +161,12 @@ function parse_dnsserver(server_addr, default_protocol) {
 
 	if (!match(server_addr, /:\/\//))
 		server_addr = (default_protocol || 'udp') + '://' + (validation('ip6addr', server_addr) ? `[${server_addr}]` : server_addr);
-	server_addr = parseURL(server_addr);
+	
+	let url = parseURL(server_addr);
+	let addr = url.protocol + '://' + url.hostname + (url.port ? ':' + url.port : '') + (url.pathname !== '/' ? url.pathname : '');
 
 	return {
-		type: server_addr.protocol,
-		server: server_addr.hostname,
-		server_port: strToInt(server_addr.port),
-		path: (server_addr.pathname !== '/') ? server_addr.pathname : null,
+		address: addr
 	}
 }
 
@@ -424,13 +423,12 @@ config.dns = {
 	servers: [
 		{
 			tag: 'default-dns',
-			type: 'udp',
-			server: wan_dns,
+			address: 'udp://' + (validation('ip6addr', wan_dns) ? `[${wan_dns}]` : wan_dns),
 			detour: self_mark ? 'direct-out' : null
 		},
 		{
 			tag: 'system-dns',
-			type: 'local',
+			address: 'local',
 			detour: self_mark ? 'direct-out' : null
 		}
 	],
@@ -438,7 +436,6 @@ config.dns = {
 	strategy: dns_default_strategy,
 	disable_cache: strToBool(dns_disable_cache),
 	disable_expire: strToBool(dns_disable_cache_expire),
-	independent_cache: strToBool(dns_independent_cache),
 	client_subnet: dns_client_subnet
 };
 
@@ -521,12 +518,13 @@ if (!isEmpty(main_node)) {
 		if (outbound === 'direct-out' && isEmpty(self_mark))
 			outbound = null;
 
+		let address = (cfg.type || 'udp') + '://' + (validation('ip6addr', cfg.server) ? `[${cfg.server}]` : cfg.server);
+		if (cfg.server_port) address += ':' + cfg.server_port;
+		if (cfg.path) address += cfg.path;
+
 		push(config.dns.servers, {
 			tag: 'cfg-' + cfg['.name'] + '-dns',
-			type: cfg.type,
-			server: cfg.server,
-			server_port: strToInt(cfg.server_port),
-			path: cfg.path,
+			address: address,
 			headers: cfg.headers,
 			tls: cfg.tls_sni ? {
 				enabled: true,
