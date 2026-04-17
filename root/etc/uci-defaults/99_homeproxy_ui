@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# Create symbolic link for HomeProxy dashboard
+[ -d /etc/homeproxy/ui ] && [ ! -L /www/hp ] && ln -s /etc/homeproxy/ui /www/hp
+
+exit 0

@@ -414,7 +414,7 @@ if (!isEmpty(ntp_server))
 		enabled: true,
 		server: ntp_server,
 		detour: 'direct-out',
-		domain_resolver: 'default-dns',
+		address_resolver: 'default-dns',
 	};
 
 /* DNS start */
@@ -439,14 +439,20 @@ config.dns = {
 	client_subnet: dns_client_subnet
 };
 
+/* Outbound server resolution rules */
+if (!isEmpty(main_node)) {
+	push(config.dns.rules, {
+		outbound: ['main-out', 'main-udp-out'],
+		server: 'default-dns',
+		action: 'route'
+	});
+}
+
 if (!isEmpty(main_node)) {
 	/* Main DNS */
 	push(config.dns.servers, {
 		tag: 'main-dns',
-		domain_resolver: {
-			server: 'default-dns',
-			strategy: (ipv6_support !== '1') ? 'ipv4_only' : null
-		},
+		address_resolver: 'default-dns',
 		detour: 'main-out',
 		...parse_dnsserver(dns_server, 'tcp')
 	});
@@ -470,10 +476,8 @@ if (!isEmpty(main_node)) {
 	if (routing_mode === 'bypass_mainland_china') {
 		push(config.dns.servers, {
 			tag: 'china-dns',
-			domain_resolver: {
-				server: 'default-dns',
-				strategy: 'prefer_ipv6'
-			},
+			address_resolver: 'default-dns',
+			strategy: 'prefer_ipv6',
 			detour: self_mark ? 'direct-out' : null,
 			...parse_dnsserver(china_dns_server)
 		});
@@ -488,8 +492,7 @@ if (!isEmpty(main_node)) {
 		push(config.dns.rules, {
 			rule_set: 'geosite-cn',
 			action: 'route',
-			server: 'china-dns',
-			strategy: 'prefer_ipv6'
+			server: 'china-dns'
 		});
 		push(config.dns.rules, {
 			type: 'logical',
@@ -504,8 +507,7 @@ if (!isEmpty(main_node)) {
 				}
 			],
 			action: 'route',
-			server: 'china-dns',
-			strategy: 'prefer_ipv6'
+			server: 'china-dns'
 		});
 	}
 } else if (!isEmpty(default_outbound)) {
@@ -530,10 +532,7 @@ if (!isEmpty(main_node)) {
 				enabled: true,
 				server_name: cfg.tls_sni
 			} : null,
-			domain_resolver: (cfg.address_resolver || cfg.address_strategy) ? {
-				server: get_resolver(cfg.address_resolver || dns_default_server),
-				strategy: cfg.address_strategy
-			} : null,
+			address_resolver: get_resolver(cfg.address_resolver || dns_default_server),
 			detour: outbound
 		});
 	});
@@ -570,7 +569,6 @@ if (!isEmpty(main_node)) {
 			outbound: get_outbound(cfg.outbound),
 			action: cfg.action,
 			server: get_resolver(cfg.server),
-			strategy: cfg.domain_strategy,
 			disable_cache: strToBool(cfg.dns_disable_cache),
 			rewrite_ttl: strToInt(cfg.rewrite_ttl),
 			client_subnet: cfg.client_subnet,
@@ -756,20 +754,24 @@ if (!isEmpty(main_node)) {
 				push(config.endpoints, generate_endpoint(outbound));
 				config.endpoints[length(config.endpoints)-1].bind_interface = cfg.bind_interface;
 				config.endpoints[length(config.endpoints)-1].detour = get_outbound(cfg.outbound);
-				if (cfg.domain_resolver)
-					config.endpoints[length(config.endpoints)-1].domain_resolver = {
+				if (cfg.domain_resolver) {
+					push(config.dns.rules, {
+						outbound: 'cfg-' + cfg['.name'] + '-out',
 						server: get_resolver(cfg.domain_resolver),
-						strategy: cfg.domain_strategy
-					};
+						action: 'route'
+					});
+				}
 			} else {
 				push(config.outbounds, generate_outbound(outbound));
 				config.outbounds[length(config.outbounds)-1].bind_interface = cfg.bind_interface;
 				config.outbounds[length(config.outbounds)-1].detour = get_outbound(cfg.outbound);
-				if (cfg.domain_resolver)
-					config.outbounds[length(config.outbounds)-1].domain_resolver = {
+				if (cfg.domain_resolver) {
+					push(config.dns.rules, {
+						outbound: 'cfg-' + cfg['.name'] + '-out',
 						server: get_resolver(cfg.domain_resolver),
-						strategy: cfg.domain_strategy
-					};
+						action: 'route'
+					});
+				}
 			}
 			push(routing_nodes, cfg.node);
 		}
@@ -810,13 +812,6 @@ config.route = {
 
 /* Routing rules */
 if (!isEmpty(main_node)) {
-	/* Avoid DNS loop */
-	config.route.default_domain_resolver = {
-		action: 'route',
-		server: (routing_mode === 'bypass_mainland_china') ? 'china-dns' : 'default-dns',
-		strategy: (ipv6_support !== '1') ? 'prefer_ipv4' : null
-	};
-
 	/* Direct list */
 	if (length(direct_domain_list))
 		push(config.route.rules, {
