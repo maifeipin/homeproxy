@@ -1675,17 +1675,56 @@ return view.extend({
 		so.placeholder = _('New Rule');
 
 		so = ss.option(form.Value, 'mac', _('Device MAC'));
-		so.datatype = 'macaddr';
 		so.placeholder = '00:11:22:AA:BB:CC';
+		so.rmempty = false;
 
+		if (hosts) {
+			for (let mac in hosts) {
+				let host = hosts[mac];
+				let ip = (host.ipaddrs && host.ipaddrs.length) ? host.ipaddrs[0] : (host.ip6addrs && host.ip6addrs.length ? host.ip6addrs[0] : '');
+				let name = host.name || _('Unknown');
+				so.value(mac.toUpperCase(), name + ' (' + ip + ') [' + mac.toUpperCase() + ']');
+			}
+		}
+
+		so.validate = function(section_id, value) {
+
+			if (value && !value.match(/^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/))
+				return _('Invalid MAC address format (double-quote notation is not needed).');
+			return true;
+		};
 
 		so = ss.option(form.Value, 'time_start', _('Start Time'));
 		so.placeholder = '22:00';
-		so.datatype = 'timehhmm';
+		so.validate = function(section_id, value) {
+			if (value && !value.match(/^([01]\d|2[0-3]):([0-5]\d)$/))
+				return _('Invalid time format (HH:mm, 24h).');
+			return true;
+		};
 
 		so = ss.option(form.Value, 'time_end', _('End Time'));
 		so.placeholder = '07:00';
-		so.datatype = 'timehhmm';
+		so.validate = function(section_id, value) {
+			if (value && !value.match(/^([01]\d|2[0-3]):([0-5]\d)$/))
+				return _('Invalid time format (HH:mm, 24h).');
+			
+			let start = this.section.formvalue(section_id, 'time_start');
+			if (value && start && value === start)
+				return _('Start Time and End Time cannot be the same.');
+			
+			return true;
+		};
+
+		ss.validate = function(section_id) {
+			let start = this.formvalue(section_id, 'time_start');
+			let end = this.formvalue(section_id, 'time_end');
+			if ((start && !end) || (!start && end))
+				return _('Both Start Time and End Time must be specified.');
+			return true;
+		};
+
+
+
 
 		so = ss.option(form.MultiValue, 'days', _('Days'));
 		so.value('Mon', _('Monday'));

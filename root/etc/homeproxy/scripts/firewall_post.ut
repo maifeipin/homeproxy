@@ -110,8 +110,34 @@ for (let i in control_options)
 const dns_redirect = uci.get(cfgname, 'infra', 'dns_redirect') || '1';
 const dns_hijacked = uci.get('dhcp', '@dnsmasq[0]', 'dns_redirect') || '0',
       dns_port = uci.get('dhcp', '@dnsmasq[0]', 'port') || '53';
+
+/* ACL rules - pre-compute from UCI */
+const acl_rules = [];
+uci.foreach(cfgname, 'access_control', (s) => {
+	if (s.enabled === '0' || (isEmpty(s.mac) && isEmpty(s.ip)))
+		return;
+
+	let rule_match = '';
+	if (!isEmpty(s.mac))
+		rule_match += 'ether saddr ' + s.mac;
+	if (!isEmpty(s.ip)) {
+		let is_v6 = (index(s.ip, ':') != -1);
+		rule_match += (rule_match ? ' ' : '') + (is_v6 ? 'ip6' : 'ip') + ' saddr ' + s.ip;
+	}
+	if (!isEmpty(s.time_start) && !isEmpty(s.time_end))
+		rule_match += ' hour "' + s.time_start + '"-"' + s.time_end + '"';
+	if (!isEmpty(s.days))
+		rule_match += ' day { ' + join(', ', map(s.days, (d) => '"' + d + '"')) + ' }';
+
+	push(acl_rules, {
+		match: rule_match,
+		action: s.action || 'reject',
+		label: s.label || 'unnamed'
+	});
+});
 /* UCI config end */
 -%}
+
 
 {# Reserved addresses -#}
 set homeproxy_local_addr_v4 {
@@ -252,16 +278,11 @@ set homeproxy_routing_port {
 
 {# DNS hijack & TCP redirect #}
 chain homeproxy_acl {
-{% uci.foreach(cfgname, 'access_control', (s) => { -%}
-	{% if (s.enabled === '0' || (isEmpty(s.mac) && isEmpty(s.ip))): continue; endif -%}
-	{% let rule_match = "" -%}
-	{% if (!isEmpty(s.mac)): rule_match += "ether saddr " + s.mac; endif -%}
-	{% if (!isEmpty(s.ip)): rule_match += (rule_match ? " " : "") + "ip saddr " + s.ip; endif -%}
-	{% if (!isEmpty(s.time_start) && !isEmpty(s.time_end)): rule_match += " hour \"" + s.time_start + "\"-\"" + s.time_end + "\""; endif -%}
-	{% if (!isEmpty(s.days)): rule_match += " day { " + join(', ', map(s.days, (d) => "\"" + d + "\"")) + " }"; endif -%}
-	{{ rule_match }} counter {{ s.action || 'reject' }} comment "!{{ cfgname }}: ACL {{ s.label || 'unnamed' }}"
-{% }); -%}
+{% for (let rule in acl_rules): %}
+	{{ rule.match }} counter {{ rule.action }} comment "!{{ cfgname }}: ACL {{ rule.label }}"
+{% endfor %}
 }
+
 
 chain dstnat {
 	jump homeproxy_acl

@@ -247,7 +247,13 @@ start_service() {
 
 	# Setup firewall
 	ucode "$HP_DIR/scripts/firewall_pre.uc"
-	[ "$outbound_node" = "nil" ] || utpl -S "$HP_DIR/scripts/firewall_post.ut" > "$RUN_DIR/fw4_post.nft"
+	if [ "$outbound_node" != "nil" ]; then
+		utpl -S "$HP_DIR/scripts/firewall_post.ut" > "$RUN_DIR/fw4_post.nft"
+		if ! nft --check -f "$RUN_DIR/fw4_post.nft" 2>>"$LOG_PATH"; then
+			log "Error: Invalid nftables rules generated (possibly due to ACL syntax). Skipping apply."
+			rm -f "$RUN_DIR/fw4_post.nft"
+		fi
+	fi
 	fw4 reload >"/dev/null" 2>&1
 
 	log "sing-box $(sing-box version -n) started."
@@ -280,7 +286,7 @@ stop_service() {
 	ip -6 rule del fwmark "$tun_mark" table "$table_mark" 2>"/dev/null"
 
 	# Nftables rules
-	for i in "homeproxy_dstnat_redir" "homeproxy_output_redir" \
+	for i in "homeproxy_acl" "homeproxy_dstnat_redir" "homeproxy_output_redir" \
 		 "homeproxy_redirect" "homeproxy_redirect_proxy" \
 		 "homeproxy_redirect_proxy_port" "homeproxy_redirect_lanac" \
 		 "homeproxy_mangle_prerouting" "homeproxy_mangle_output" \
