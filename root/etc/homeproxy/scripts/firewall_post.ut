@@ -126,8 +126,9 @@ uci.foreach(cfgname, 'access_control', (s) => {
 	}
 	if (!isEmpty(s.time_start) && !isEmpty(s.time_end))
 		rule_match += ' hour "' + s.time_start + '"-"' + s.time_end + '"';
+	const day_map = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
 	if (!isEmpty(s.days))
-		rule_match += ' day { ' + join(', ', map(s.days, (d) => '"' + d + '"')) + ' }';
+		rule_match += ' meta day { ' + join(', ', map(s.days, (d) => day_map[d] || d)) + ' }';
 
 	push(acl_rules, {
 		match: rule_match,

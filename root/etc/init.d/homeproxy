@@ -249,10 +249,6 @@ start_service() {
 	ucode "$HP_DIR/scripts/firewall_pre.uc"
 	if [ "$outbound_node" != "nil" ]; then
 		utpl -S "$HP_DIR/scripts/firewall_post.ut" > "$RUN_DIR/fw4_post.nft"
-		if ! nft --check -f "$RUN_DIR/fw4_post.nft" 2>>"$LOG_PATH"; then
-			log "Error: Invalid nftables rules generated (possibly due to ACL syntax). Skipping apply."
-			rm -f "$RUN_DIR/fw4_post.nft"
-		fi
 	fi
 	fw4 reload >"/dev/null" 2>&1
 

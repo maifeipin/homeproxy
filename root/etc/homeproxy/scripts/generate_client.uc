@@ -970,10 +970,7 @@ uci.foreach(uciconfig, uciroutingrule, (cfg) => {
 });
 
 if (!isEmpty(default_outbound)) {
-	config.route.default_domain_resolver = {
-		action: 'resolve',
-		server: get_resolver(default_outbound_dns)
-	};
+	/* default_domain_resolver is deprecated and removed in sing-box v1.12+ */
 
 	config.route.final = get_outbound(default_outbound);
 
