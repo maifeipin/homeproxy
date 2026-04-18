@@ -6,12 +6,75 @@
 # Set default routing mode to Custom
 uci set homeproxy.config.routing_mode='custom'
 
-# Pre-seed Master Edition Routing Rules
+# ============================================================
+# Pre-seed: Rule Sets (规则集下载地址)
+# 这些是路由规则和DNS规则的底层依赖
+# ============================================================
+if ! uci -q get homeproxy.rs_geosite_cn >/dev/null; then
+	uci set homeproxy.rs_geosite_cn=ruleset
+	uci set homeproxy.rs_geosite_cn.label='GeoSite-CN'
+	uci set homeproxy.rs_geosite_cn.enabled='1'
+	uci set homeproxy.rs_geosite_cn.type='remote'
+	uci set homeproxy.rs_geosite_cn.format='binary'
+	uci set homeproxy.rs_geosite_cn.url='https://fastly.jsdelivr.net/gh/1715173329/sing-geosite@rule-set-unstable/geosite-geolocation-cn.srs'
+	uci set homeproxy.rs_geosite_cn.outbound='direct-out'
+	uci set homeproxy.rs_geosite_cn.update_interval='1d'
+fi
+
+if ! uci -q get homeproxy.rs_geoip_cn >/dev/null; then
+	uci set homeproxy.rs_geoip_cn=ruleset
+	uci set homeproxy.rs_geoip_cn.label='GeoIP-CN'
+	uci set homeproxy.rs_geoip_cn.enabled='1'
+	uci set homeproxy.rs_geoip_cn.type='remote'
+	uci set homeproxy.rs_geoip_cn.format='binary'
+	uci set homeproxy.rs_geoip_cn.url='https://fastly.jsdelivr.net/gh/1715173329/IPCIDR-CHINA@rule-set/cn.srs'
+	uci set homeproxy.rs_geoip_cn.outbound='direct-out'
+	uci set homeproxy.rs_geoip_cn.update_interval='1d'
+fi
+
+if ! uci -q get homeproxy.rs_geosite_noncn >/dev/null; then
+	uci set homeproxy.rs_geosite_noncn=ruleset
+	uci set homeproxy.rs_geosite_noncn.label='GeoSite-NonCN'
+	uci set homeproxy.rs_geosite_noncn.enabled='1'
+	uci set homeproxy.rs_geosite_noncn.type='remote'
+	uci set homeproxy.rs_geosite_noncn.format='binary'
+	uci set homeproxy.rs_geosite_noncn.url='https://fastly.jsdelivr.net/gh/1715173329/sing-geosite@rule-set-unstable/geosite-geolocation-!cn.srs'
+	uci set homeproxy.rs_geosite_noncn.outbound='direct-out'
+	uci set homeproxy.rs_geosite_noncn.update_interval='1d'
+fi
+
+# ============================================================
+# Pre-seed: DNS Servers (DNS 服务器)
+# ============================================================
+if ! uci -q get homeproxy.dns_china >/dev/null; then
+	uci set homeproxy.dns_china=dns_server
+	uci set homeproxy.dns_china.label='China DNS (AliDNS)'
+	uci set homeproxy.dns_china.enabled='1'
+	uci set homeproxy.dns_china.type='udp'
+	uci set homeproxy.dns_china.server='223.5.5.5'
+	uci set homeproxy.dns_china.outbound='direct-out'
+fi
+
+if ! uci -q get homeproxy.dns_main >/dev/null; then
+	uci set homeproxy.dns_main=dns_server
+	uci set homeproxy.dns_main.label='Main DNS (Google)'
+	uci set homeproxy.dns_main.enabled='1'
+	uci set homeproxy.dns_main.type='https'
+	uci set homeproxy.dns_main.server='dns.google'
+	uci set homeproxy.dns_main.server_port='443'
+	uci set homeproxy.dns_main.address_resolver='default-dns'
+	uci set homeproxy.dns_main.outbound='direct-out'
+fi
+
+# ============================================================
+# Pre-seed: Routing Rules (路由规则)
+# 引用上面创建的规则集 UCI section name
+# ============================================================
 if ! uci -q get homeproxy.rule_cn_site >/dev/null; then
 	uci set homeproxy.rule_cn_site=routing_rule
 	uci set homeproxy.rule_cn_site.label='[Master] CN Site Direct'
 	uci set homeproxy.rule_cn_site.enabled='1'
-	uci add_list homeproxy.rule_cn_site.rule_set='geosite-cn'
+	uci add_list homeproxy.rule_cn_site.rule_set='rs_geosite_cn'
 	uci set homeproxy.rule_cn_site.action='route'
 	uci set homeproxy.rule_cn_site.outbound='direct-out'
 fi
@@ -20,20 +83,27 @@ if ! uci -q get homeproxy.rule_cn_ip >/dev/null; then
 	uci set homeproxy.rule_cn_ip=routing_rule
 	uci set homeproxy.rule_cn_ip.label='[Master] CN IP Direct'
 	uci set homeproxy.rule_cn_ip.enabled='1'
-	uci add_list homeproxy.rule_cn_ip.rule_set='geoip-cn'
+	uci add_list homeproxy.rule_cn_ip.rule_set='rs_geoip_cn'
 	uci set homeproxy.rule_cn_ip.action='route'
 	uci set homeproxy.rule_cn_ip.outbound='direct-out'
 fi
 
-# Pre-seed Master Edition DNS Rules
+# ============================================================
+# Pre-seed: DNS Rules (DNS 规则)
+# ============================================================
 if ! uci -q get homeproxy.dns_rule_cn >/dev/null; then
 	uci set homeproxy.dns_rule_cn=dns_rule
 	uci set homeproxy.dns_rule_cn.label='[Master] CN Domain Resolve'
 	uci set homeproxy.dns_rule_cn.enabled='1'
-	uci add_list homeproxy.dns_rule_cn.rule_set='geosite-cn'
+	uci add_list homeproxy.dns_rule_cn.rule_set='rs_geosite_cn'
 	uci set homeproxy.dns_rule_cn.action='route'
-	uci set homeproxy.dns_rule_cn.server='china-dns'
+	uci set homeproxy.dns_rule_cn.server='dns_china'
 fi
+
+# ============================================================
+# Set DNS default server to our pre-seeded Main DNS
+# ============================================================
+uci set homeproxy.dns.default_server='dns_main'
 
 # Apply changes
 uci commit homeproxy
