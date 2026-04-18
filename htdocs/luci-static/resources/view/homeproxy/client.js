@@ -1674,8 +1674,10 @@ return view.extend({
 		so = ss.option(form.Value, 'label', _('Rule Label'));
 		so.placeholder = _('New Rule');
 
-		so = fwtool.addMACOption(ss, 'access_control', 'mac', _('Device MAC'), null, hosts);
-		so.rmempty = true;
+		so = ss.option(form.Value, 'mac', _('Device MAC'));
+		so.datatype = 'macaddr';
+		so.placeholder = '00:11:22:AA:BB:CC';
+
 
 		so = ss.option(form.Value, 'time_start', _('Start Time'));
 		so.placeholder = '22:00';
