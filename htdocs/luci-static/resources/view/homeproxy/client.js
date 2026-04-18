@@ -122,11 +122,18 @@ return view.extend({
 
 		o = s.taboption('routing', form.ListValue, 'main_node', _('Main node'));
 		o.value('nil', _('Disable'));
+		o.value('custom', _('Master Custom Mode (大师自定义)'));
 		o.value('urltest', _('URLTest'));
 		for (let i in proxy_nodes)
 			o.value(i, proxy_nodes[i]);
 		o.default = 'nil';
 		o.rmempty = false;
+		o.onchange = function(ev, section_id, value) {
+			var mode_el = this.section.getUIElement(section_id, 'routing_mode');
+			if (mode_el) {
+				mode_el.setValue((value === 'custom') ? 'custom' : 'bypass_mainland_china');
+			}
+		};
 
 		o = s.taboption('routing', hp.CBIStaticList, 'main_urltest_nodes', _('URLTest nodes'),
 			_('List of nodes to test.'));

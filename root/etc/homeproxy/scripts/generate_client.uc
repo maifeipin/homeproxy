@@ -42,7 +42,9 @@ const uciroutingsetting = 'routing',
 const ucinode = 'node';
 const uciruleset = 'ruleset';
 
-const routing_mode = uci.get(uciconfig, ucimain, 'routing_mode') || 'bypass_mainland_china';
+const routing_mode_raw = uci.get(uciconfig, ucimain, 'routing_mode') || 'bypass_mainland_china';
+const main_node_raw = uci.get(uciconfig, ucimain, 'main_node') || 'nil';
+const routing_mode = (main_node_raw === 'custom') ? 'custom' : routing_mode_raw;
 
 let wan_dns = ubus.call('network.interface', 'status', {'interface': 'wan'})?.['dns-server']?.[0];
 if (!wan_dns)
@@ -54,7 +56,7 @@ const ntp_server = uci.get(uciconfig, uciinfra, 'ntp_server') || 'time.apple.com
 
 const ipv6_support = uci.get(uciconfig, ucimain, 'ipv6_support') || '0';
 
-let main_node, main_udp_node, dedicated_udp_node, default_outbound, default_outbound_dns,
+let main_node = 'nil', main_udp_node = 'nil', dedicated_udp_node, default_outbound, default_outbound_dns,
     domain_strategy, sniff_override, dns_server, china_dns_server, dns_default_strategy,
     dns_default_server, dns_disable_cache, dns_disable_cache_expire, dns_independent_cache,
     dns_client_subnet, cache_file_store_rdrc, cache_file_rdrc_timeout, direct_domain_list,
@@ -64,7 +66,7 @@ dashboard_port = uci.get(uciconfig, ucimain, 'dashboard_port') || '9090';
 dashboard_secret = uci.get(uciconfig, ucimain, 'dashboard_secret') || 'password';
 
 if (routing_mode !== 'custom') {
-	main_node = uci.get(uciconfig, ucimain, 'main_node') || 'nil';
+	main_node = main_node_raw;
 	main_udp_node = uci.get(uciconfig, ucimain, 'main_udp_node') || 'nil';
 	dedicated_udp_node = !isEmpty(main_udp_node) && !(main_udp_node in ['same', main_node]);
 

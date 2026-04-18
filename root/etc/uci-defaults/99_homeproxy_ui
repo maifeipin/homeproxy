@@ -5,6 +5,7 @@
 
 # Set default routing mode to Custom
 uci set homeproxy.config.routing_mode='custom'
+uci set homeproxy.config.main_node='custom'
 
 # ============================================================
 # Pre-seed: Rule Sets (规则集下载地址)
