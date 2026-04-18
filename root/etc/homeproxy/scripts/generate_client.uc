@@ -164,12 +164,19 @@ function parse_dnsserver(server_addr, default_protocol) {
 	if (!match(server_addr, /:\/\//))
 		server_addr = (default_protocol || 'udp') + '://' + (validation('ip6addr', server_addr) ? `[${server_addr}]` : server_addr);
 	
-	let url = parseURL(server_addr);
-	let addr = url.protocol + '://' + url.hostname + (url.port ? ':' + url.port : '') + (url.pathname !== '/' ? url.pathname : '');
+	const url = parseURL(server_addr);
+	const protocol = (url.protocol === 'https') ? 'https' : (url.protocol === 'tls' ? 'tls' : (url.protocol === 'tcp' ? 'tcp' : 'udp'));
+	
+	const dns_obj = {
+		type: protocol,
+		server: url.hostname,
+		server_port: strToInt(url.port) || (protocol === 'https' ? 443 : (protocol === 'tls' ? 853 : 53))
+	};
 
-	return {
-		address: addr
-	}
+	if (url.pathname && url.pathname !== '/')
+		dns_obj.server = url.hostname + url.pathname;
+
+	return dns_obj;
 }
 
 function parse_dnsquery(strquery) {
@@ -211,7 +218,8 @@ function generate_endpoint(node) {
 		system: (node.type === 'wireguard') ? false : null,
 		tcp_fast_open: strToBool(node.tcp_fast_open),
 		tcp_multi_path: strToBool(node.tcp_multi_path),
-		udp_fragment: strToBool(node.udp_fragment)
+		udp_fragment: strToBool(node.udp_fragment),
+		domain_resolver: 'default-dns'
 	};
 
 	return endpoint;
@@ -341,7 +349,8 @@ function generate_outbound(node) {
 		} : null),
 		tcp_fast_open: strToBool(node.tcp_fast_open),
 		tcp_multi_path: strToBool(node.tcp_multi_path),
-		udp_fragment: strToBool(node.udp_fragment)
+		udp_fragment: strToBool(node.udp_fragment),
+		domain_resolver: 'default-dns'
 	};
 
 	return outbound;
@@ -416,7 +425,7 @@ if (!isEmpty(ntp_server))
 		enabled: true,
 		server: ntp_server,
 		detour: 'direct-out',
-		address_resolver: 'default-dns',
+		domain_resolver: 'default-dns',
 	};
 
 /* DNS start */
@@ -425,12 +434,12 @@ config.dns = {
 	servers: [
 		{
 			tag: 'default-dns',
-			address: 'udp://' + (validation('ip6addr', wan_dns) ? `[${wan_dns}]` : wan_dns),
+			...parse_dnsserver(wan_dns, 'udp'),
 			detour: self_mark ? 'direct-out' : null
 		},
 		{
 			tag: 'system-dns',
-			address: 'local',
+			type: 'local',
 			detour: self_mark ? 'direct-out' : null
 		}
 	],
@@ -441,21 +450,13 @@ config.dns = {
 	client_subnet: dns_client_subnet
 };
 
-/* Outbound server resolution rules */
-if (!isEmpty(main_node)) {
-	push(config.dns.rules, {
-		outbound: ['main-out', 'main-udp-out'],
-		server: 'default-dns',
-		action: 'route'
-	});
-}
 
 if (!isEmpty(main_node)) {
 	/* Main DNS */
 	push(config.dns.servers, {
 		tag: 'main-dns',
-		address_resolver: 'default-dns',
 		detour: 'main-out',
+		domain_resolver: 'default-dns',
 		...parse_dnsserver(dns_server, 'tcp')
 	});
 	config.dns.final = 'main-dns';
@@ -478,9 +479,8 @@ if (!isEmpty(main_node)) {
 	if (routing_mode === 'bypass_mainland_china') {
 		push(config.dns.servers, {
 			tag: 'china-dns',
-			address_resolver: 'default-dns',
-			strategy: 'prefer_ipv6',
 			detour: self_mark ? 'direct-out' : null,
+			domain_resolver: 'default-dns',
 			...parse_dnsserver(china_dns_server)
 		});
 
@@ -494,7 +494,8 @@ if (!isEmpty(main_node)) {
 		push(config.dns.rules, {
 			rule_set: 'geosite-cn',
 			action: 'route',
-			server: 'china-dns'
+			server: 'china-dns',
+			strategy: 'prefer_ipv6'
 		});
 		push(config.dns.rules, {
 			type: 'logical',
@@ -522,19 +523,18 @@ if (!isEmpty(main_node)) {
 		if (outbound === 'direct-out' && isEmpty(self_mark))
 			outbound = null;
 
-		let address = (cfg.type || 'udp') + '://' + (validation('ip6addr', cfg.server) ? `[${cfg.server}]` : cfg.server);
-		if (cfg.server_port) address += ':' + cfg.server_port;
-		if (cfg.path) address += cfg.path;
-
+		const dns_obj = parse_dnsserver(cfg.server, cfg.type || 'udp');
+		if (cfg.server_port) dns_obj.server_port = strToInt(cfg.server_port);
+		
 		push(config.dns.servers, {
 			tag: 'cfg-' + cfg['.name'] + '-dns',
-			address: address,
+			...dns_obj,
 			headers: cfg.headers,
 			tls: cfg.tls_sni ? {
 				enabled: true,
 				server_name: cfg.tls_sni
 			} : null,
-			address_resolver: get_resolver(cfg.address_resolver || dns_default_server),
+			domain_resolver: get_resolver(cfg.address_resolver || dns_default_server),
 			detour: outbound
 		});
 	});
@@ -757,22 +757,14 @@ if (!isEmpty(main_node)) {
 				config.endpoints[length(config.endpoints)-1].bind_interface = cfg.bind_interface;
 				config.endpoints[length(config.endpoints)-1].detour = get_outbound(cfg.outbound);
 				if (cfg.domain_resolver) {
-					push(config.dns.rules, {
-						outbound: 'cfg-' + cfg['.name'] + '-out',
-						server: get_resolver(cfg.domain_resolver),
-						action: 'route'
-					});
+					config.endpoints[length(config.endpoints)-1].domain_resolver = get_resolver(cfg.domain_resolver);
 				}
 			} else {
 				push(config.outbounds, generate_outbound(outbound));
 				config.outbounds[length(config.outbounds)-1].bind_interface = cfg.bind_interface;
 				config.outbounds[length(config.outbounds)-1].detour = get_outbound(cfg.outbound);
 				if (cfg.domain_resolver) {
-					push(config.dns.rules, {
-						outbound: 'cfg-' + cfg['.name'] + '-out',
-						server: get_resolver(cfg.domain_resolver),
-						action: 'route'
-					});
+					config.outbounds[length(config.outbounds)-1].domain_resolver = get_resolver(cfg.domain_resolver);
 				}
 			}
 			push(routing_nodes, cfg.node);
@@ -795,6 +787,7 @@ if (isEmpty(config.endpoints))
 /* Routing rules start */
 /* Default settings */
 config.route = {
+	default_domain_resolver: 'default-dns',
 	rules: [
 		{
 			inbound: 'dns-in',
@@ -1003,7 +996,7 @@ config.experimental = {
 	},
 	clash_api: {
 		external_controller: '0.0.0.0:' + dashboard_port,
-		external_ui: 'ui',
+		external_ui: HP_DIR + '/ui',
 		secret: dashboard_secret,
 		default_mode: 'rule'
 	}

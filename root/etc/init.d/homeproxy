@@ -149,6 +149,7 @@ start_service() {
 
 		# Ensure permissions for non-privileged user
 		mkdir -p "$RUN_DIR"
+		mkdir -p "$HP_DIR/ui"
 		chown -R sing-box:sing-box "$HP_DIR"
 		chown -R sing-box:sing-box "$RUN_DIR"
 
