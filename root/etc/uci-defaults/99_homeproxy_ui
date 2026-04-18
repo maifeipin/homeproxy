@@ -91,9 +91,26 @@ if ! uci -q get homeproxy.dns_rule_cn >/dev/null; then
 fi
 
 # ============================================================
+# Pre-seed: Routing Nodes (节点)
+# 预置一个直连节点，确保在没有机场时也能启动服务
+# ============================================================
+if ! uci -q get homeproxy.node_direct >/dev/null; then
+	uci set homeproxy.node_direct=routing_node
+	uci set homeproxy.node_direct.label='[Master] Local Direct'
+	uci set homeproxy.node_direct.protocol='direct'
+fi
+
+# ============================================================
+# Pre-seed: Routing Setting (路由总体设置)
+# ============================================================
+uci set homeproxy.routing.default_outbound='node_direct'
+uci set homeproxy.routing.bypass_cn_traffic='1'
+
+# ============================================================
 # Set DNS default server to our pre-seeded Main DNS
 # ============================================================
 uci set homeproxy.dns.default_server='dns_main'
+
 
 # Apply changes
 uci commit homeproxy

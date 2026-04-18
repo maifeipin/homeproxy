@@ -251,8 +251,22 @@ set homeproxy_routing_port {
 {% endif %}
 
 {# DNS hijack & TCP redirect #}
+chain homeproxy_acl {
+{% uci.foreach(cfgname, 'access_control', (s) => { -%}
+	{% if (s.enabled === '0' || (isEmpty(s.mac) && isEmpty(s.ip))): continue; endif -%}
+	{% let rule_match = "" -%}
+	{% if (!isEmpty(s.mac)): rule_match += "ether saddr " + s.mac; endif -%}
+	{% if (!isEmpty(s.ip)): rule_match += (rule_match ? " " : "") + "ip saddr " + s.ip; endif -%}
+	{% if (!isEmpty(s.time_start) && !isEmpty(s.time_end)): rule_match += " hour \"" + s.time_start + "\"-\"" + s.time_end + "\""; endif -%}
+	{% if (!isEmpty(s.days)): rule_match += " day { " + join(', ', map(s.days, (d) => "\"" + d + "\"")) + " }"; endif -%}
+	{{ rule_match }} counter {{ s.action || 'reject' }} comment "!{{ cfgname }}: ACL {{ s.label || 'unnamed' }}"
+{% }); -%}
+}
+
 chain dstnat {
+	jump homeproxy_acl
 {% if ((dns_redirect === '1') && (dns_hijacked !== '1')): %}
+
 	{% if (control_info.listen_interfaces): %}
 	meta iifname {{ array_to_nftarr(control_info.listen_interfaces) }}
 	{%- endif /* listen_interfaces */ %}
@@ -277,6 +291,7 @@ chain homeproxy_redirect_proxy_port {
 }
 
 chain homeproxy_redirect_lanac {
+	jump homeproxy_acl
 	{% if (control_info.listen_interfaces): %}
 	meta iifname != {{ array_to_nftarr(control_info.listen_interfaces) }} counter return
 	{% endif %}
@@ -399,6 +414,7 @@ chain homeproxy_mangle_mark {
 }
 
 chain homeproxy_mangle_lanac {
+	jump homeproxy_acl
 	{% if (control_info.listen_interfaces): %}
 	meta iifname != {{ array_to_nftarr(uniq([...control_info.listen_interfaces, ...['lo']])) }} counter return
 	{% endif %}
@@ -544,6 +560,7 @@ chain mangle_output {
 {# TUN #}
 {% if (match(proxy_mode, /tun/)): %}
 chain homeproxy_mangle_lanac {
+	jump homeproxy_acl
 	iifname {{ tun_name }} counter return
 	udp dport 53 counter return
 

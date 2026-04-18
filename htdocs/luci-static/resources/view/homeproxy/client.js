@@ -1657,7 +1657,51 @@ return view.extend({
 			return true;
 		}
 		/* Direct domain list end */
+		/* Direct domain list end */
+
+		/* ACL settings start */
+		ss = m.section(form.GridSection, 'access_control', _('Access Control List (ACL)'),
+			_('Control internet access for LAN devices based on time and days. Rules here override proxy settings.'));
+		ss.anonymous = true;
+		ss.addremove = true;
+		ss.sortable = true;
+		ss.nodescriptions = true;
+
+		so = ss.option(form.Flag, 'enabled', _('Enable'));
+		so.default = '1';
+		so.editable = true;
+
+		so = ss.option(form.Value, 'label', _('Rule Label'));
+		so.placeholder = _('New Rule');
+
+		so = fwtool.addMACOption(ss, 'access_control', 'mac', _('Device MAC'), null, hosts);
+		so.rmempty = true;
+
+		so = ss.option(form.Value, 'time_start', _('Start Time'));
+		so.placeholder = '22:00';
+		so.datatype = 'timehhmm';
+
+		so = ss.option(form.Value, 'time_end', _('End Time'));
+		so.placeholder = '07:00';
+		so.datatype = 'timehhmm';
+
+		so = ss.option(form.MultiValue, 'days', _('Days'));
+		so.value('Mon', _('Monday'));
+		so.value('Tue', _('Tuesday'));
+		so.value('Wed', _('Wednesday'));
+		so.value('Thu', _('Thursday'));
+		so.value('Fri', _('Friday'));
+		so.value('Sat', _('Saturday'));
+		so.value('Sun', _('Sunday'));
+		so.default = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+		so = ss.option(form.ListValue, 'action', _('Action'));
+		so.value('reject', _('Reject (Notify)'));
+		so.value('drop', _('Drop (Silent)'));
+		so.value('accept', _('Accept (Allow)'));
+		so.default = 'reject';
 		/* ACL settings end */
+
 
 		return m.render();
 	}
