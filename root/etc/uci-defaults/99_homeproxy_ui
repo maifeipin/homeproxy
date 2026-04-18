@@ -32,16 +32,6 @@ if ! uci -q get homeproxy.rs_geoip_cn >/dev/null; then
 	uci set homeproxy.rs_geoip_cn.update_interval='1d'
 fi
 
-if ! uci -q get homeproxy.rs_geosite_noncn >/dev/null; then
-	uci set homeproxy.rs_geosite_noncn=ruleset
-	uci set homeproxy.rs_geosite_noncn.label='GeoSite-NonCN'
-	uci set homeproxy.rs_geosite_noncn.enabled='1'
-	uci set homeproxy.rs_geosite_noncn.type='remote'
-	uci set homeproxy.rs_geosite_noncn.format='binary'
-	uci set homeproxy.rs_geosite_noncn.url='https://fastly.jsdelivr.net/gh/1715173329/sing-geosite@rule-set-unstable/geosite-geolocation-!cn.srs'
-	uci set homeproxy.rs_geosite_noncn.outbound='direct-out'
-	uci set homeproxy.rs_geosite_noncn.update_interval='1d'
-fi
 
 # ============================================================
 # Pre-seed: DNS Servers (DNS 服务器)
