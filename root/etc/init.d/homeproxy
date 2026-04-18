@@ -143,6 +143,10 @@ start_service() {
 			;;
 		esac
 
+		# Ensure routing rule for self-mark (loopback prevention in main router mode)
+		ip rule del fwmark 100 table main 2>/dev/null
+		ip rule add fwmark 100 table main
+
 		# sing-box (client)
 		procd_open_instance "sing-box-c"
 

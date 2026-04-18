@@ -113,7 +113,8 @@ const proxy_mode = uci.get(uciconfig, ucimain, 'proxy_mode') || 'redirect_tproxy
 
 const mixed_port = uci.get(uciconfig, uciinfra, 'mixed_port') || '5330';
 
-let self_mark, redirect_port, tproxy_port, tun_name,
+let self_mark = uci.get(uciconfig, 'infra', 'self_mark') || '100',
+    redirect_port, tproxy_port, tun_name,
     tun_addr4, tun_addr6, tun_mtu, tcpip_stack,
     endpoint_independent_nat, udp_timeout;
 
@@ -123,7 +124,6 @@ else
 	udp_timeout = uci.get(uciconfig, 'infra', 'udp_timeout');
 
 if (match(proxy_mode, /redirect/)) {
-	self_mark = uci.get(uciconfig, 'infra', 'self_mark') || '100';
 	redirect_port = uci.get(uciconfig, 'infra', 'redirect_port') || '5331';
 }
 if (match(proxy_mode), /tproxy/)
@@ -335,10 +335,10 @@ function generate_outbound(node) {
 			ping_timeout: (node.http_ping_timeout),
 			permit_without_stream: strToBool(node.grpc_permit_without_stream)
 		} : null,
-		udp_over_tcp: (node.udp_over_tcp === '1') ? {
+		udp_over_tcp: (node.type === 'socks') ? { enabled: true, version: 2 } : ((node.udp_over_tcp === '1') ? {
 			enabled: true,
 			version: strToInt(node.udp_over_tcp_version)
-		} : null,
+		} : null),
 		tcp_fast_open: strToBool(node.tcp_fast_open),
 		tcp_multi_path: strToBool(node.tcp_multi_path),
 		udp_fragment: strToBool(node.udp_fragment)
@@ -972,9 +972,8 @@ uci.foreach(uciconfig, uciroutingrule, (cfg) => {
 });
 
 if (!isEmpty(default_outbound)) {
-	/* default_domain_resolver is deprecated and removed in sing-box v1.12+ */
-
 	config.route.final = get_outbound(default_outbound);
+	config.route.default_domain_resolver = 'default-dns';
 
 	/* Rule set */
 	uci.foreach(uciconfig, uciruleset, (cfg) => {

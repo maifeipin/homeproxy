@@ -93,6 +93,7 @@ if (match(proxy_mode, /tun/)) {
 	tun_mark = resolve_mark(uci.get(cfgname, 'infra', 'tun_mark') || '102');
 }
 
+
 const control_options = [
 	"listen_interfaces", "lan_proxy_mode",
 	"lan_direct_mac_addrs", "lan_direct_ipv4_ips", "lan_direct_ipv6_ips",
