@@ -971,25 +971,25 @@ uci.foreach(uciconfig, uciroutingrule, (cfg) => {
 	}
 });
 
+/* Rule set */
+uci.foreach(uciconfig, uciruleset, (cfg) => {
+	if (cfg.enabled !== '1')
+		return null;
+
+	push(config.route.rule_set, {
+		type: cfg.type,
+		tag: 'cfg-' + cfg['.name'] + '-rule',
+		format: cfg.format,
+		path: cfg.path,
+		url: cfg.url,
+		download_detour: get_outbound(cfg.outbound),
+		update_interval: cfg.update_interval
+	});
+});
+
 if (!isEmpty(default_outbound)) {
 	config.route.final = get_outbound(default_outbound);
 	config.route.default_domain_resolver = 'default-dns';
-
-	/* Rule set */
-	uci.foreach(uciconfig, uciruleset, (cfg) => {
-		if (cfg.enabled !== '1')
-			return null;
-
-		push(config.route.rule_set, {
-			type: cfg.type,
-			tag: 'cfg-' + cfg['.name'] + '-rule',
-			format: cfg.format,
-			path: cfg.path,
-			url: cfg.url,
-			download_detour: get_outbound(cfg.outbound),
-			update_interval: cfg.update_interval
-		});
-	});
 }
 /* Routing rules end */
 
