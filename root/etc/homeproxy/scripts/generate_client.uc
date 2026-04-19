@@ -975,6 +975,12 @@ uci.foreach(uciconfig, uciroutingrule, (cfg) => {
 	if (cfg.enabled !== '1')
 		return null;
 
+	// v1.4.38: Deduplicate bypass rules to prevent double entry in MetaCubeXD
+	const rulesets = get_ruleset(cfg.rule_set);
+	if (routing_mode === 'bypass_mainland_china' && rulesets && (index(rulesets, 'cfg-rs_geosite_cn-rule') != -1 || index(rulesets, 'cfg-rs_geoip_cn-rule') != -1)) {
+		return null;
+	}
+
 	let rule = {
 		ip_version: strToInt(cfg.ip_version),
 		protocol: cfg.protocol,
