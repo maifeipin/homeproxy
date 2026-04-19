@@ -845,9 +845,6 @@ if (!isEmpty(main_node)) {
 	}
 
 	config.route.final = 'main-out';
-
-	if (isEmpty(config.route.rule_set))
-		config.route.rule_set = null;
 }
 
 /* Global Rule Sets (Direct/Proxy list) */
@@ -872,25 +869,6 @@ if (length(proxy_domain_list))
 			}
 		]
 	});
-
-/* Standard Remote Rule Sets (Always Available for references) */
-push(config.route.rule_set, {
-	type: 'remote',
-	tag: 'cfg-rs_geoip_cn-rule',
-	format: 'binary',
-	url: 'https://fastly.jsdelivr.net/gh/1715173329/IPCIDR-CHINA@rule-set/cn.srs',
-	download_detour: 'direct-out',
-	update_interval: '1d'
-});
-
-push(config.route.rule_set, {
-	type: 'remote',
-	tag: 'cfg-rs_geosite_cn-rule',
-	format: 'binary',
-	url: 'https://fastly.jsdelivr.net/gh/1715173329/sing-geosite@rule-set-unstable/geosite-geolocation-cn.srs',
-	download_detour: 'direct-out',
-	update_interval: '1d'
-});
 
 /* Priority Global Rules (Unified Architecture) */
 uci.foreach(uciconfig, uciroutingrule, (cfg) => {
