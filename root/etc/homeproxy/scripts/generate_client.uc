@@ -703,11 +703,21 @@ if (!isEmpty(main_node)) {
 
 		push(config.outbounds, {
 			type: 'urltest',
-			tag: 'main-out',
+			tag: 'Auto-Select@urltest-out',
 			outbounds: map(main_urltest_nodes, (k) => get_outbound_tag_by_id(k)),
 			interval: strToTime(main_urltest_interval),
 			tolerance: strToInt(main_urltest_tolerance),
 			idle_timeout: (strToInt(main_urltest_interval) > 1800) ? `${main_urltest_interval * 2}s` : null,
+		});
+
+		push(config.outbounds, {
+			type: 'selector',
+			tag: 'Proxy-Master@GLOBAL',
+			outbounds: [
+				'Auto-Select@urltest-out',
+				...map(main_urltest_nodes, (k) => get_outbound_tag_by_id(k))
+			],
+			interrupt_exist_connections: true
 		});
 		urltest_nodes = main_urltest_nodes;
 	} else {
@@ -717,8 +727,27 @@ if (!isEmpty(main_node)) {
 			config.endpoints[length(config.endpoints)-1].tag = 'main-out';
 		} else {
 			push(config.outbounds, generate_outbound(main_node_cfg));
-			config.outbounds[length(config.outbounds)-1].tag = 'main-out';
+			if (!isEmpty(config.outbounds[length(config.outbounds)-1]))
+				config.outbounds[length(config.outbounds)-1].tag = 'main-out';
 		}
+	}
+
+	// Always ensure a Master Selector exists for Dashboard control
+	let all_proxy_nodes = [];
+	uci.foreach(uciconfig, ucinode, (n) => {
+		if (n.enabled === '1') push(all_proxy_nodes, get_outbound_tag_by_id(n['.name']));
+	});
+	uci.foreach(uciconfig, uciruleset, (rs) => {
+		if (rs.enabled === '1' && rs.type === 'urltest') push(all_proxy_nodes, get_outbound_tag_by_id(rs['.name']));
+	});
+
+	if (length(all_proxy_nodes)) {
+		push(config.outbounds, {
+			type: 'selector',
+			tag: 'Proxy-Master@GLOBAL',
+			outbounds: all_proxy_nodes,
+			interrupt_exist_connections: true
+		});
 	}
 
 	if (main_udp_node === 'urltest') {
@@ -728,11 +757,21 @@ if (!isEmpty(main_node)) {
 
 		push(config.outbounds, {
 			type: 'urltest',
-			tag: 'main-udp-out',
+			tag: 'Auto-UDP@urltest-out',
 			outbounds: map(main_udp_urltest_nodes, (k) => get_outbound_tag_by_id(k)),
 			interval: strToTime(main_udp_urltest_interval),
 			tolerance: strToInt(main_udp_urltest_tolerance),
 			idle_timeout: (strToInt(main_udp_urltest_interval) > 1800) ? `${main_udp_urltest_interval * 2}s` : null,
+		});
+
+		push(config.outbounds, {
+			type: 'selector',
+			tag: 'Proxy-UDP-Master@GLOBAL-UDP',
+			outbounds: [
+				'Auto-UDP@urltest-out',
+				...map(main_udp_urltest_nodes, (k) => get_outbound_tag_by_id(k))
+			],
+			interrupt_exist_connections: true
 		});
 		urltest_nodes = [...urltest_nodes, ...filter(main_udp_urltest_nodes, (l) => !~index(urltest_nodes, l))];
 	} else if (dedicated_udp_node) {
@@ -845,12 +884,11 @@ if (length(direct_domain_list))
 
 if (!isEmpty(main_node)) {
 
-	/* Main UDP out */
 	if (dedicated_udp_node)
 		push(config.route.rules, {
 			network: 'udp',
 			action: 'route',
-			outbound: 'main-udp-out'
+			outbound: 'Proxy-UDP-Master@GLOBAL-UDP'
 		});
 
 	/* Mainland China bypass */
@@ -867,7 +905,7 @@ if (!isEmpty(main_node)) {
 		});
 	}
 
-	config.route.final = 'main-out';
+	config.route.final = 'Proxy-Master@GLOBAL';
 }
 
 /* Global Rule Sets (Direct/Proxy list) */
@@ -970,18 +1008,41 @@ uci.foreach(uciconfig, uciruleset, (cfg) => {
 	if (cfg.enabled !== '1')
 		return null;
 
-	push(config.route.rule_set, {
-		type: cfg.type,
-		tag: 'cfg-' + cfg['.name'] + '-rule',
-		format: cfg.format,
-		path: cfg.path,
-		url: cfg.url,
-		download_detour: get_outbound(cfg.outbound),
-		update_interval: cfg.update_interval
-	});
+	if (cfg.type === 'urltest') {
+		push(config.outbounds, {
+			type: 'urltest',
+			tag: 'Auto-' + cfg['.name'] + '-out',
+			outbounds: map(cfg.urltest_nodes, (k) => get_outbound_tag_by_id(k)),
+			url: cfg.urltest_url,
+			interval: strToTime(cfg.urltest_interval),
+			tolerance: strToInt(cfg.urltest_tolerance),
+		});
+		push(config.outbounds, {
+			type: 'selector',
+			tag: get_outbound_tag_by_id(cfg['.name']),
+			outbounds: [
+				'Auto-' + cfg['.name'] + '-out',
+				...map(cfg.urltest_nodes, (k) => get_outbound_tag_by_id(k))
+			],
+			interrupt_exist_connections: true
+		});
+	} else {
+		push(config.route.rule_set, {
+			type: cfg.type,
+			tag: 'cfg-' + cfg['.name'] + '-rule',
+			format: cfg.format,
+			path: cfg.path,
+			url: cfg.url,
+			download_detour: get_outbound(cfg.outbound),
+			update_interval: cfg.update_interval
+		});
+	}
 });
 
-if (!isEmpty(default_outbound)) {
+if (routing_mode === 'custom' || !isEmpty(main_node)) {
+	config.route.final = 'Proxy-Master@GLOBAL';
+	config.route.default_domain_resolver = 'default-dns';
+} else if (!isEmpty(default_outbound)) {
 	config.route.final = get_outbound(default_outbound);
 	config.route.default_domain_resolver = 'default-dns';
 }
