@@ -145,6 +145,30 @@ const log_level = uci.get(uciconfig, ucimain, 'log_level') || 'warn';
 /* UCI config end */
 
 /* Config helper start */
+function unique(arr) {
+	let r = [];
+	for (let i = 0; i < length(arr); i++) {
+		if (index(r, arr[i]) == null) push(r, arr[i]);
+	}
+	return r;
+}
+
+function get_outbound_tag_by_id(id) {
+	if (isEmpty(id) || id === 'nil') return null;
+
+	// Reserved system tags
+	if (id in ['any', 'proxy', 'direct', 'block', 'main-out', 'main-udp-out', 'direct-out', 'block-out', 'dns-out', 'default-out', 'GLOBAL', 'GLOBAL-UDP'])
+		return id;
+
+	// Dashboard-friendly labeling logic (restored from v1.1 backup)
+	const label = uci.get(uciconfig, id, 'label');
+	if (!isEmpty(label)) {
+		return label + '@cfg-' + id + '-out';
+	}
+
+	return 'cfg-' + id + '-out';
+}
+
 function parse_port(strport) {
 	if (type(strport) !== 'array' || isEmpty(strport))
 		return null;
@@ -189,24 +213,6 @@ function parse_dnsquery(strquery) {
 
 	return querys;
 
-}
-
-function get_outbound_tag_by_id(id) {
-	if (isEmpty(id)) return null;
-	if (id in ['any', 'proxy', 'direct', 'block', 'main-out', 'main-udp-out', 'direct-out', 'block-out', 'dns-out', 'default-out'])
-		return id;
-
-	// Check if already tagged with prefix
-	if (match(id, /@cfg-/)) return id;
-
-	const node = uci.get_all(uciconfig, id) || {};
-	const label = node.label;
-	const base_tag = (match(id, /^cfg-/) ? id : 'cfg-' + id + '-out');
-	
-	if (isEmpty(label))
-		return base_tag;
-
-	return label + '@' + base_tag;
 }
 
 function generate_endpoint(node) {
@@ -379,30 +385,25 @@ function get_outbound(cfg) {
 		return null;
 
 	if (type(cfg) === 'array') {
-		if ('any-out' in cfg)
-			return 'any';
-
 		let outbounds = [];
 		for (let i in cfg)
 			push(outbounds, get_outbound(i));
 		return outbounds;
-	} else {
-		switch (cfg) {
-		case 'block-out':
-		case 'direct-out':
-			return cfg;
-		default:
-			const node = uci.get(uciconfig, cfg, 'node');
-			if (isEmpty(node)) {
-				// Try direct tag resolution if node is not explicitly defined as a proxy-node reference
-				return get_outbound_tag_by_id(cfg);
-			} else if (node === 'urltest') {
-				return get_outbound_tag_by_id(cfg);
-			} else {
-				return get_outbound_tag_by_id(node);
-			}
-		}
 	}
+
+	// Handle standard targets first
+	if (cfg in ['block-out', 'direct-out', 'main-out', 'main-udp-out', 'any-out']) {
+		return cfg;
+	}
+
+	// Resolve actual node/ruleset target
+	const node = uci.get(uciconfig, cfg, 'node');
+	if (isEmpty(node)) {
+		// Fallback for direct node ID reference
+		return get_outbound_tag_by_id(cfg);
+	}
+
+	return get_outbound_tag_by_id(node === 'urltest' ? cfg : node);
 }
 
 function get_resolver(cfg) {
@@ -518,7 +519,7 @@ if (!isEmpty(main_node)) {
 			});
 
 		push(config.dns.rules, {
-			rule_set: 'geosite-cn',
+			rule_set: 'cfg-rs_geosite_cn-rule',
 			action: 'route',
 			server: 'china-dns',
 			strategy: 'prefer_ipv6'
@@ -528,11 +529,11 @@ if (!isEmpty(main_node)) {
 			mode: 'and',
 			rules: [
 				{
-					rule_set: 'geosite-noncn',
+					rule_set: 'cfg-rs_geosite_cn-rule',
 					invert: true
 				},
 				{
-					rule_set: 'geoip-cn'
+					rule_set: 'cfg-rs_geoip_cn-rule'
 				}
 			],
 			action: 'route',
@@ -603,16 +604,42 @@ if (!isEmpty(main_node)) {
 			method: cfg.reject_method,
 			no_drop: strToBool(cfg.reject_no_drop),
 			rcode: cfg.predefined_rcode,
-			answer: cfg.predefined_answer,
-			ns: cfg.predefined_ns,
-			extra: cfg.predefined_extra
+			answer: cfg.predefined_answer
 		});
 	});
 
 	if (isEmpty(config.dns.rules))
 		config.dns.rules = null;
 
-	config.dns.final = get_resolver(dns_default_server);
+	/* Common DNS rule-sets for all modes (v1.4.5) */
+uci.foreach(uciconfig, uciruleset, (cfg) => {
+	if (cfg.enabled !== '1') return null;
+	if (isEmpty(config.dns.rule_set)) config.dns.rule_set = [];
+	push(config.dns.rule_set, {
+		type: cfg.type,
+		tag: 'cfg-' + cfg['.name'] + '-rule',
+		format: cfg.format,
+		path: cfg.path,
+		url: cfg.url,
+		download_detour: get_outbound(cfg.outbound),
+		update_interval: cfg.update_interval
+	});
+});
+
+if (length(direct_domain_list)) {
+	if (isEmpty(config.dns.rule_set)) config.dns.rule_set = [];
+	push(config.dns.rule_set, {
+		type: 'inline',
+		tag: 'direct-domain',
+		rules: [
+			{
+				domain_keyword: direct_domain_list,
+			}
+		]
+	});
+}
+
+config.dns.final = get_resolver(dns_default_server);
 }
 /* DNS end */
 
@@ -693,33 +720,79 @@ config.outbounds = [
 ];
 
 /* Main outbounds */
+let main_urltest_nodes = [];
 if (!isEmpty(main_node)) {
 	let urltest_nodes = [];
+	main_urltest_nodes = uci.get(uciconfig, ucimain, 'main_urltest_nodes') || [];
+	
+	// Forced Auto-group Generation (v1.4.11/1.4.15/1.4.16)
+	
+	// v1.4.15/1.4.16 Heuristic: If no urltest nodes configured, use all detected proxy nodes
+	if (isEmpty(main_urltest_nodes)) {
+		uci.foreach(uciconfig, 'node', function(cfg) {
+			if (cfg.enabled !== '0' && cfg.type != 'urltest' && !isEmpty(cfg.type)) {
+				push(main_urltest_nodes, cfg['.name']);
+			}
+		});
+	}
 
-	if (main_node === 'urltest') {
-		const main_urltest_nodes = uci.get(uciconfig, ucimain, 'main_urltest_nodes') || [];
-		const main_urltest_interval = uci.get(uciconfig, ucimain, 'main_urltest_interval');
-		const main_urltest_tolerance = uci.get(uciconfig, ucimain, 'main_urltest_tolerance');
+	if (length(main_urltest_nodes) > 0) {
+		const main_urltest_interval = uci.get(uciconfig, ucimain, 'main_urltest_interval') || '300';
+		const main_urltest_tolerance = uci.get(uciconfig, ucimain, 'main_urltest_tolerance') || '50';
+
+		let auto_outbounds = [];
+		for (let i = 0; i < length(main_urltest_nodes); i++) {
+			let node_tag = get_outbound_tag_by_id(main_urltest_nodes[i]);
+			if (!isEmpty(node_tag)) push(auto_outbounds, node_tag);
+		}
 
 		push(config.outbounds, {
 			type: 'urltest',
-			tag: 'Auto-Select@urltest-out',
-			outbounds: map(main_urltest_nodes, (k) => get_outbound_tag_by_id(k)),
+			tag: 'Auto-Check-TCP',
+			outbounds: map(main_urltest_nodes, (id) => (id === main_node) ? 'main-out' : get_outbound_tag_by_id(id)),
 			interval: strToTime(main_urltest_interval),
 			tolerance: strToInt(main_urltest_tolerance),
 			idle_timeout: (strToInt(main_urltest_interval) > 1800) ? `${main_urltest_interval * 2}s` : null,
 		});
 
+		// Force instantiation of ALL detected nodes - FIX iterative syntax (v1.4.31)
+		for (let i = 0; i < length(main_urltest_nodes); i++) {
+			let id = main_urltest_nodes[i];
+			if (id === main_node) continue; // main-out handle separately by HP
+			
+			const node_cfg = uci.get_all(uciconfig, id) || {};
+			if (node_cfg.type === 'wireguard') {
+				push(config.endpoints, generate_endpoint(node_cfg));
+				config.endpoints[length(config.endpoints)-1].tag = get_outbound_tag_by_id(id);
+			} else {
+				let node_out = generate_outbound(node_cfg);
+				if (node_out) {
+					push(config.outbounds, node_out);
+					config.outbounds[length(config.outbounds)-1].tag = get_outbound_tag_by_id(id);
+				}
+			}
+		}
+
+		for (let i = 0; i < length(main_urltest_nodes); i++) {
+			push(urltest_nodes, main_urltest_nodes[i]);
+		}
+		urltest_nodes = unique(urltest_nodes);
+	}
+
+	if (main_node === 'urltest') {
+		let main_members = ['Auto-Check-TCP'];
+		for (let i = 0; i < length(main_urltest_nodes); i++) {
+			let node_tag = get_outbound_tag_by_id(main_urltest_nodes[i]);
+			if (!isEmpty(node_tag)) push(main_members, node_tag);
+		}
+		push(main_members, 'direct-out');
+
 		push(config.outbounds, {
 			type: 'selector',
-			tag: 'Proxy-Master@GLOBAL',
-			outbounds: [
-				'Auto-Select@urltest-out',
-				...map(main_urltest_nodes, (k) => get_outbound_tag_by_id(k))
-			],
+			tag: 'main-out',
+			outbounds: unique(main_members),
 			interrupt_exist_connections: true
 		});
-		urltest_nodes = main_urltest_nodes;
 	} else {
 		const main_node_cfg = uci.get_all(uciconfig, main_node) || {};
 		if (main_node_cfg.type === 'wireguard') {
@@ -727,27 +800,8 @@ if (!isEmpty(main_node)) {
 			config.endpoints[length(config.endpoints)-1].tag = 'main-out';
 		} else {
 			push(config.outbounds, generate_outbound(main_node_cfg));
-			if (!isEmpty(config.outbounds[length(config.outbounds)-1]))
-				config.outbounds[length(config.outbounds)-1].tag = 'main-out';
+			config.outbounds[length(config.outbounds)-1].tag = 'main-out';
 		}
-	}
-
-	// Always ensure a Master Selector exists for Dashboard control
-	let all_proxy_nodes = [];
-	uci.foreach(uciconfig, ucinode, (n) => {
-		if (n.enabled === '1') push(all_proxy_nodes, get_outbound_tag_by_id(n['.name']));
-	});
-	uci.foreach(uciconfig, uciruleset, (rs) => {
-		if (rs.enabled === '1' && rs.type === 'urltest') push(all_proxy_nodes, get_outbound_tag_by_id(rs['.name']));
-	});
-
-	if (length(all_proxy_nodes)) {
-		push(config.outbounds, {
-			type: 'selector',
-			tag: 'Proxy-Master@GLOBAL',
-			outbounds: all_proxy_nodes,
-			interrupt_exist_connections: true
-		});
 	}
 
 	if (main_udp_node === 'urltest') {
@@ -757,7 +811,7 @@ if (!isEmpty(main_node)) {
 
 		push(config.outbounds, {
 			type: 'urltest',
-			tag: 'Auto-UDP@urltest-out',
+			tag: 'Auto-Check-UDP',
 			outbounds: map(main_udp_urltest_nodes, (k) => get_outbound_tag_by_id(k)),
 			interval: strToTime(main_udp_urltest_interval),
 			tolerance: strToInt(main_udp_urltest_tolerance),
@@ -766,9 +820,9 @@ if (!isEmpty(main_node)) {
 
 		push(config.outbounds, {
 			type: 'selector',
-			tag: 'Proxy-UDP-Master@GLOBAL-UDP',
+			tag: 'main-udp-out',
 			outbounds: [
-				'Auto-UDP@urltest-out',
+				'Auto-Check-UDP',
 				...map(main_udp_urltest_nodes, (k) => get_outbound_tag_by_id(k))
 			],
 			interrupt_exist_connections: true
@@ -789,10 +843,10 @@ if (!isEmpty(main_node)) {
 		const urltest_node = uci.get_all(uciconfig, i) || {};
 		if (urltest_node.type === 'wireguard') {
 			push(config.endpoints, generate_endpoint(urltest_node));
-			config.endpoints[length(config.endpoints)-1].tag = 'cfg-' + i + '-out';
+			config.endpoints[length(config.endpoints)-1].tag = get_outbound_tag_by_id(i);
 		} else {
 			push(config.outbounds, generate_outbound(urltest_node));
-			config.outbounds[length(config.outbounds)-1].tag = 'cfg-' + i + '-out';
+			config.outbounds[length(config.outbounds)-1].tag = get_outbound_tag_by_id(i);
 		}
 	}
 } else if (!isEmpty(default_outbound)) {
@@ -806,7 +860,7 @@ if (!isEmpty(main_node)) {
 		if (cfg.node === 'urltest') {
 			push(config.outbounds, {
 				type: 'urltest',
-				tag: get_outbound_tag_by_id(cfg['.name']),
+				tag: 'Auto-Check-' + cfg['.name'],
 				outbounds: map(cfg.urltest_nodes, (k) => get_outbound_tag_by_id(k)),
 				url: cfg.urltest_url,
 				interval: strToTime(cfg.urltest_interval),
@@ -814,11 +868,22 @@ if (!isEmpty(main_node)) {
 				idle_timeout: strToTime(cfg.urltest_idle_timeout),
 				interrupt_exist_connections: strToBool(cfg.urltest_interrupt_exist_connections)
 			});
+
+			push(config.outbounds, {
+				type: 'selector',
+				tag: get_outbound_tag_by_id(cfg['.name']),
+				outbounds: [
+					'Auto-Check-' + cfg['.name'],
+					...map(cfg.urltest_nodes, (k) => get_outbound_tag_by_id(k))
+				],
+				interrupt_exist_connections: true
+			});
 			urltest_nodes = [...urltest_nodes, ...filter(cfg.urltest_nodes, (l) => !~index(urltest_nodes, l))];
 		} else {
 			const outbound = uci.get_all(uciconfig, cfg.node) || {};
 			if (outbound.type === 'wireguard') {
 				push(config.endpoints, generate_endpoint(outbound));
+				config.endpoints[length(config.endpoints)-1].tag = get_outbound_tag_by_id(cfg['.name']);
 				config.endpoints[length(config.endpoints)-1].bind_interface = cfg.bind_interface;
 				config.endpoints[length(config.endpoints)-1].detour = get_outbound(cfg.outbound);
 				if (cfg.domain_resolver) {
@@ -826,6 +891,7 @@ if (!isEmpty(main_node)) {
 				}
 			} else {
 				push(config.outbounds, generate_outbound(outbound));
+				config.outbounds[length(config.outbounds)-1].tag = get_outbound_tag_by_id(cfg['.name']);
 				config.outbounds[length(config.outbounds)-1].bind_interface = cfg.bind_interface;
 				config.outbounds[length(config.outbounds)-1].detour = get_outbound(cfg.outbound);
 				if (cfg.domain_resolver) {
@@ -884,28 +950,29 @@ if (length(direct_domain_list))
 
 if (!isEmpty(main_node)) {
 
+	/* Main UDP out */
 	if (dedicated_udp_node)
 		push(config.route.rules, {
 			network: 'udp',
 			action: 'route',
-			outbound: 'Proxy-UDP-Master@GLOBAL-UDP'
+			outbound: 'main-udp-out'
 		});
 
 	/* Mainland China bypass */
 	if (routing_mode === 'bypass_mainland_china') {
 		push(config.route.rules, {
-			rule_set: "geosite-cn",
+			rule_set: "cfg-rs_geosite_cn-rule",
 			action: "route",
 			outbound: "direct-out"
 		});
 		push(config.route.rules, {
-			rule_set: "geoip-cn",
+			rule_set: "cfg-rs_geoip_cn-rule",
 			action: "route",
 			outbound: "direct-out"
 		});
 	}
 
-	config.route.final = 'Proxy-Master@GLOBAL';
+	config.route.final = 'main-out';
 }
 
 /* Global Rule Sets (Direct/Proxy list) */
@@ -1008,41 +1075,66 @@ uci.foreach(uciconfig, uciruleset, (cfg) => {
 	if (cfg.enabled !== '1')
 		return null;
 
-	if (cfg.type === 'urltest') {
-		push(config.outbounds, {
-			type: 'urltest',
-			tag: 'Auto-' + cfg['.name'] + '-out',
-			outbounds: map(cfg.urltest_nodes, (k) => get_outbound_tag_by_id(k)),
-			url: cfg.urltest_url,
-			interval: strToTime(cfg.urltest_interval),
-			tolerance: strToInt(cfg.urltest_tolerance),
-		});
-		push(config.outbounds, {
-			type: 'selector',
-			tag: get_outbound_tag_by_id(cfg['.name']),
-			outbounds: [
-				'Auto-' + cfg['.name'] + '-out',
-				...map(cfg.urltest_nodes, (k) => get_outbound_tag_by_id(k))
-			],
-			interrupt_exist_connections: true
-		});
-	} else {
-		push(config.route.rule_set, {
-			type: cfg.type,
-			tag: 'cfg-' + cfg['.name'] + '-rule',
-			format: cfg.format,
-			path: cfg.path,
-			url: cfg.url,
-			download_detour: get_outbound(cfg.outbound),
-			update_interval: cfg.update_interval
-		});
-	}
+	push(config.route.rule_set, {
+		type: cfg.type,
+		tag: 'cfg-' + cfg['.name'] + '-rule',
+		format: cfg.format,
+		path: cfg.path,
+		url: cfg.url,
+		download_detour: get_outbound(cfg.outbound),
+		update_interval: cfg.update_interval
+	});
+});
+
+/* Final Master Selector for Dashboard control (v1.2.3) (v1.4.30) */
+let all_proxy_tags = [];
+
+// 1. Directly extract from already generated outbounds
+for (let ob in config.outbounds) {
+	if (ob.tag in ['direct-out', 'block-out', 'dns-out', 'main-out', 'main-udp-out', 'GLOBAL', 'GLOBAL-UDP']) continue;
+	if (match(ob.tag, /^Auto-/)) continue; // Hide internal test groups
+	push(all_proxy_tags, ob.tag);
+}
+
+// 2. Add endpoints (WireGuard etc.)
+for (let ep in config.endpoints) {
+	if (isEmpty(ep) || ep.tag === 'main-out' || ep.tag === 'main-udp-out') continue;
+	push(all_proxy_tags, ep.tag);
+}
+
+// Remove duplicates and nils
+all_proxy_tags = filter(all_proxy_tags, (tag, idx) => {
+	return !isEmpty(tag) && index(all_proxy_tags, tag) === idx;
+});
+
+if (isEmpty(all_proxy_tags)) {
+	push(all_proxy_tags, 'direct-out');
+}
+
+// Create Manual group
+push(config.outbounds, {
+	type: 'selector',
+	tag: 'Manual-Selection',
+	outbounds: all_proxy_tags,
+	interrupt_exist_connections: true
+});
+
+// Create GLOBAL Trinity
+push(config.outbounds, {
+	type: 'selector',
+	tag: 'GLOBAL',
+	outbounds: [
+		'Auto-Check-TCP',
+		'Manual-Selection',
+		'direct-out'
+	],
+	interrupt_exist_connections: true
 });
 
 if (routing_mode === 'custom' || !isEmpty(main_node)) {
-	config.route.final = 'Proxy-Master@GLOBAL';
-	config.route.default_domain_resolver = 'default-dns';
-} else if (!isEmpty(default_outbound)) {
+	config.route.final = 'GLOBAL';
+}
+ else if (!isEmpty(default_outbound)) {
 	config.route.final = get_outbound(default_outbound);
 	config.route.default_domain_resolver = 'default-dns';
 }
