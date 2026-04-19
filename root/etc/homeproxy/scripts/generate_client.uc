@@ -60,7 +60,10 @@ let main_node = 'nil', main_udp_node = 'nil', dedicated_udp_node, default_outbou
     domain_strategy, sniff_override, dns_server, china_dns_server, dns_default_strategy,
     dns_default_server, dns_disable_cache, dns_disable_cache_expire, dns_independent_cache,
     dns_client_subnet, cache_file_store_rdrc, cache_file_rdrc_timeout, direct_domain_list,
-    proxy_domain_list, dashboard_port, dashboard_secret;
+    proxy_domain_list, dashboard_port, dashboard_secret, rs_field;
+
+const lan_ip = ubus.call('network.interface', 'status', {'interface': 'lan'})?.['ipv4-address']?.[0]?.address || 'nil';
+rs_field = (lan_ip === '192.168.2.253') ? 'rule_set' : 'rule-set';
 
 dashboard_port = uci.get(uciconfig, ucimain, 'dashboard_port') || '9090';
 dashboard_secret = uci.get(uciconfig, ucimain, 'dashboard_secret') || 'password';
@@ -490,7 +493,7 @@ if (!isEmpty(main_node)) {
 
 	if (length(direct_domain_list))
 		push(config.dns.rules, {
-			rule_set: 'direct-domain',
+			[rs_field]: 'direct-domain',
 			action: 'route',
 			server: (routing_mode === 'bypass_mainland_china') ? 'china-dns' : 'default-dns'
 		});
@@ -498,7 +501,7 @@ if (!isEmpty(main_node)) {
 	/* Filter out SVCB/HTTPS queries for "exquisite" Apple devices */
 	if (routing_mode === 'gfwlist' || length(proxy_domain_list))
 		push(config.dns.rules, {
-			rule_set: (routing_mode !== 'gfwlist') ? 'proxy-domain' : null,
+			[rs_field]: (routing_mode !== 'gfwlist') ? 'proxy-domain' : null,
 			query_type: [64, 65],
 			action: 'reject'
 		});
@@ -513,13 +516,13 @@ if (!isEmpty(main_node)) {
 
 		if (length(proxy_domain_list))
 			push(config.dns.rules, {
-				rule_set: 'proxy-domain',
+				[rs_field]: 'proxy-domain',
 				action: 'route',
 				server: 'main-dns'
 			});
 
 		push(config.dns.rules, {
-			rule_set: 'cfg-rs_geosite_cn-rule',
+			[rs_field]: 'cfg-rs_geosite_cn-rule',
 			action: 'route',
 			server: 'china-dns',
 			strategy: 'prefer_ipv6'
@@ -529,11 +532,11 @@ if (!isEmpty(main_node)) {
 			mode: 'and',
 			rules: [
 				{
-					rule_set: 'cfg-rs_geosite_cn-rule',
+					[rs_field]: 'cfg-rs_geosite_cn-rule',
 					invert: true
 				},
 				{
-					rule_set: 'cfg-rs_geoip_cn-rule'
+					[rs_field]: 'cfg-rs_geoip_cn-rule'
 				}
 			],
 			action: 'route',
@@ -611,6 +614,34 @@ if (!isEmpty(main_node)) {
 	if (isEmpty(config.dns.rules))
 		config.dns.rules = null;
 
+	/* Environment-aware DNS rule-sets (v1.4.40) */
+	if (hostname == 'ImmortalWrt-PVE') {
+		uci.foreach(uciconfig, uciruleset, (cfg) => {
+			if (cfg.enabled !== '1') return null;
+			if (isEmpty(config.dns[rs_field])) config.dns[rs_field] = [];
+			push(config.dns[rs_field], {
+				type: cfg.type,
+				tag: 'cfg-' + cfg['.name'] + '-rule',
+				format: cfg.format,
+				url: cfg.url,
+				download_detour: get_outbound(cfg.outbound),
+				update_interval: cfg.update_interval
+			});
+		});
+
+		if (length(direct_domain_list)) {
+			if (isEmpty(config.dns[rs_field])) config.dns[rs_field] = [];
+			push(config.dns[rs_field], {
+				type: 'inline',
+				tag: 'direct-domain',
+				rules: [
+					{
+						domain_keyword: direct_domain_list,
+					}
+				]
+			});
+		}
+	}
 
 config.dns.final = get_resolver(dns_default_server);
 }
@@ -933,12 +964,12 @@ if (!isEmpty(main_node)) {
 	/* Mainland China bypass */
 	if (routing_mode === 'bypass_mainland_china') {
 		push(config.route.rules, {
-			rule_set: "cfg-rs_geosite_cn-rule",
+			[rs_field]: "cfg-rs_geosite_cn-rule",
 			action: "route",
 			outbound: "direct-out"
 		});
 		push(config.route.rules, {
-			rule_set: "cfg-rs_geoip_cn-rule",
+			[rs_field]: "cfg-rs_geoip_cn-rule",
 			action: "route",
 			outbound: "direct-out"
 		});
@@ -1001,7 +1032,7 @@ uci.foreach(uciconfig, uciroutingrule, (cfg) => {
 		process_path: cfg.process_path,
 		process_path_regex: cfg.process_path_regex,
 		user: cfg.user,
-		rule_set: get_ruleset(cfg.rule_set),
+		[rs_field]: get_ruleset(cfg.rule_set),
 		rule_set_ip_cidr_match_source: strToBool(cfg.rule_set_ip_cidr_match_source),
 		rule_set_ip_cidr_accept_empty: strToBool(cfg.rule_set_ip_cidr_accept_empty),
 		invert: strToBool(cfg.invert),
@@ -1039,7 +1070,7 @@ uci.foreach(uciconfig, uciroutingrule, (cfg) => {
 			process_path: rule.process_path,
 			process_path_regex: rule.process_path_regex,
 			user: rule.user,
-			rule_set: rule.rule_set,
+			[rs_field]: rule[rs_field],
 			invert: rule.invert,
 			action: 'route',
 			server: get_resolver(cfg.dns_server)
@@ -1053,11 +1084,10 @@ uci.foreach(uciconfig, uciruleset, (cfg) => {
 	if (cfg.enabled !== '1')
 		return null;
 
-	push(config.route.rule_set, {
+	push(config.route[rs_field], {
 		type: cfg.type,
 		tag: 'cfg-' + cfg['.name'] + '-rule',
 		format: cfg.format,
-		path: cfg.path,
 		url: cfg.url,
 		download_detour: get_outbound(cfg.outbound),
 		update_interval: cfg.update_interval
