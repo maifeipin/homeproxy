@@ -191,13 +191,31 @@ function parse_dnsquery(strquery) {
 
 }
 
+function get_outbound_tag_by_id(id) {
+	if (isEmpty(id)) return null;
+	if (id in ['any', 'proxy', 'direct', 'block', 'main-out', 'main-udp-out', 'direct-out', 'block-out', 'dns-out', 'default-out'])
+		return id;
+
+	// Check if already tagged with prefix
+	if (match(id, /@cfg-/)) return id;
+
+	const node = uci.get_all(uciconfig, id) || {};
+	const label = node.label;
+	const base_tag = (match(id, /^cfg-/) ? id : 'cfg-' + id + '-out');
+	
+	if (isEmpty(label))
+		return base_tag;
+
+	return label + '@' + base_tag;
+}
+
 function generate_endpoint(node) {
 	if (type(node) !== 'object' || isEmpty(node))
 		return null;
 
 	const endpoint = {
 		type: node.type,
-		tag: 'cfg-' + node['.name'] + '-out',
+		tag: get_outbound_tag_by_id(node['.name']),
 		address: node.wireguard_local_address,
 		mtu: strToInt(node.wireguard_mtu),
 		private_key: node.wireguard_private_key,
@@ -231,7 +249,7 @@ function generate_outbound(node) {
 
 	const outbound = {
 		type: node.type,
-		tag: 'cfg-' + node['.name'] + '-out',
+		tag: get_outbound_tag_by_id(node['.name']),
 		routing_mark: strToInt(self_mark),
 
 		server: node.address,
@@ -375,12 +393,14 @@ function get_outbound(cfg) {
 			return cfg;
 		default:
 			const node = uci.get(uciconfig, cfg, 'node');
-			if (isEmpty(node))
-				die(sprintf("%s's node is missing, please check your configuration.", cfg));
-			else if (node === 'urltest')
-				return 'cfg-' + cfg + '-out';
-			else
-				return 'cfg-' + node + '-out';
+			if (isEmpty(node)) {
+				// Try direct tag resolution if node is not explicitly defined as a proxy-node reference
+				return get_outbound_tag_by_id(cfg);
+			} else if (node === 'urltest') {
+				return get_outbound_tag_by_id(cfg);
+			} else {
+				return get_outbound_tag_by_id(node);
+			}
 		}
 	}
 }
@@ -684,7 +704,7 @@ if (!isEmpty(main_node)) {
 		push(config.outbounds, {
 			type: 'urltest',
 			tag: 'main-out',
-			outbounds: map(main_urltest_nodes, (k) => `cfg-${k}-out`),
+			outbounds: map(main_urltest_nodes, (k) => get_outbound_tag_by_id(k)),
 			interval: strToTime(main_urltest_interval),
 			tolerance: strToInt(main_urltest_tolerance),
 			idle_timeout: (strToInt(main_urltest_interval) > 1800) ? `${main_urltest_interval * 2}s` : null,
@@ -709,7 +729,7 @@ if (!isEmpty(main_node)) {
 		push(config.outbounds, {
 			type: 'urltest',
 			tag: 'main-udp-out',
-			outbounds: map(main_udp_urltest_nodes, (k) => `cfg-${k}-out`),
+			outbounds: map(main_udp_urltest_nodes, (k) => get_outbound_tag_by_id(k)),
 			interval: strToTime(main_udp_urltest_interval),
 			tolerance: strToInt(main_udp_urltest_tolerance),
 			idle_timeout: (strToInt(main_udp_urltest_interval) > 1800) ? `${main_udp_urltest_interval * 2}s` : null,
@@ -747,8 +767,8 @@ if (!isEmpty(main_node)) {
 		if (cfg.node === 'urltest') {
 			push(config.outbounds, {
 				type: 'urltest',
-				tag: 'cfg-' + cfg['.name'] + '-out',
-				outbounds: map(cfg.urltest_nodes, (k) => `cfg-${k}-out`),
+				tag: get_outbound_tag_by_id(cfg['.name']),
+				outbounds: map(cfg.urltest_nodes, (k) => get_outbound_tag_by_id(k)),
 				url: cfg.urltest_url,
 				interval: strToTime(cfg.urltest_interval),
 				tolerance: strToInt(cfg.urltest_tolerance),
@@ -779,10 +799,13 @@ if (!isEmpty(main_node)) {
 
 	for (let i in filter(urltest_nodes, (l) => !~index(routing_nodes, l))) {
 		const urltest_node = uci.get_all(uciconfig, i) || {};
-		if (urltest_node.type === 'wireguard')
+		if (urltest_node.type === 'wireguard') {
 			push(config.endpoints, generate_endpoint(urltest_node));
-		else
+			config.endpoints[length(config.endpoints)-1].tag = get_outbound_tag_by_id(i);
+		} else {
 			push(config.outbounds, generate_outbound(urltest_node));
+			config.outbounds[length(config.outbounds)-1].tag = get_outbound_tag_by_id(i);
+		}
 	}
 }
 
