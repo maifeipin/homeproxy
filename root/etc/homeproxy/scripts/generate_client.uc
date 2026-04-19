@@ -728,10 +728,9 @@ if (!isEmpty(main_node)) {
 			idle_timeout: (strToInt(main_urltest_interval) > 1800) ? `${main_urltest_interval * 2}s` : null,
 		});
 
-		// Force instantiation of ALL detected nodes - FIX iterative syntax (v1.4.31)
+		// Force instantiation of ALL detected nodes - FIX missing main_node in Manual list (v1.4.37)
 		for (let i = 0; i < length(main_urltest_nodes); i++) {
 			let id = main_urltest_nodes[i];
-			if (id === main_node) continue; // main-out handle separately by HP
 			
 			const node_cfg = uci.get_all(uciconfig, id) || {};
 			if (node_cfg.type === 'wireguard') {
