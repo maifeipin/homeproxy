@@ -74,20 +74,11 @@ if (routing_mode !== 'custom') {
 	if (isEmpty(dns_server) || dns_server === 'wan')
 		dns_server = wan_dns;
 
-	if (routing_mode === 'bypass_mainland_china') {
-		china_dns_server = uci.get(uciconfig, ucimain, 'china_dns_server');
-		if (isEmpty(china_dns_server) || type(china_dns_server) !== 'string' || china_dns_server === 'wan')
-			china_dns_server = wan_dns;
-	}
+	china_dns_server = uci.get(uciconfig, ucimain, 'china_dns_server');
+	if (isEmpty(china_dns_server) || type(china_dns_server) !== 'string' || china_dns_server === 'wan')
+		china_dns_server = wan_dns;
+
 	dns_default_strategy = (ipv6_support !== '1') ? 'ipv4_only' : null;
-
-	direct_domain_list = trim(readfile(HP_DIR + '/resources/direct_list.txt'));
-	if (direct_domain_list)
-		direct_domain_list = split(direct_domain_list, /[\r\n]/);
-
-	proxy_domain_list = trim(readfile(HP_DIR + '/resources/proxy_list.txt'));
-	if (proxy_domain_list)
-		proxy_domain_list = split(proxy_domain_list, /[\r\n]/);
 
 	sniff_override = uci.get(uciconfig, uciinfra, 'sniff_override') || '1';
 } else {
@@ -107,6 +98,15 @@ if (routing_mode !== 'custom') {
 	domain_strategy = uci.get(uciconfig, uciroutingsetting, 'domain_strategy');
 	sniff_override = uci.get(uciconfig, uciroutingsetting, 'sniff_override');
 }
+
+/* Global Domain Lists (Always Loaded) */
+direct_domain_list = trim(readfile(HP_DIR + '/resources/direct_list.txt'));
+if (direct_domain_list)
+	direct_domain_list = split(direct_domain_list, /[\r\n]/);
+
+proxy_domain_list = trim(readfile(HP_DIR + '/resources/proxy_list.txt'));
+if (proxy_domain_list)
+	proxy_domain_list = split(proxy_domain_list, /[\r\n]/);
 
 const proxy_mode = uci.get(uciconfig, ucimain, 'proxy_mode') || 'redirect_tproxy',
       default_interface = uci.get(uciconfig, ucicontrol, 'bind_interface');
@@ -403,8 +403,14 @@ function get_ruleset(cfg) {
 		return null;
 
 	let rules = [];
-	for (let i in cfg)
-		push(rules, isEmpty(i) ? null : 'cfg-' + i + '-rule');
+	for (let i in cfg) {
+		if (isEmpty(i)) continue;
+		// Handle rs_ prefix from UI selections
+		if (match(i, /^rs_/))
+			push(rules, 'cfg-' + i + '-rule');
+		else
+			push(rules, 'cfg-' + i + '-rule');
+	}
 	return rules;
 }
 /* Config helper end */
@@ -806,14 +812,15 @@ config.route = {
 };
 
 /* Routing rules */
+/* Global lists (Always inject if not empty) */
+if (length(direct_domain_list))
+	push(config.route.rules, {
+		rule_set: 'direct-domain',
+		action: 'route',
+		outbound: 'direct-out'
+	});
+
 if (!isEmpty(main_node)) {
-	/* Direct list */
-	if (length(direct_domain_list))
-		push(config.route.rules, {
-			rule_set: 'direct-domain',
-			action: 'route',
-			outbound: 'direct-out'
-		});
 
 	/* Main UDP out */
 	if (dedicated_udp_node)
@@ -839,58 +846,51 @@ if (!isEmpty(main_node)) {
 
 	config.route.final = 'main-out';
 
-	/* Rule set */
-	/* Direct list */
-	if (length(direct_domain_list))
-		push(config.route.rule_set, {
-			type: 'inline',
-			tag: 'direct-domain',
-			rules: [
-				{
-					domain_keyword: direct_domain_list,
-				}
-			]
-		});
-
-	/* Proxy list */
-	if (length(proxy_domain_list))
-		push(config.route.rule_set, {
-			type: 'inline',
-			tag: 'proxy-domain',
-			rules: [
-				{
-					domain_keyword: proxy_domain_list,
-				}
-			]
-		});
-
-	if (routing_mode === 'bypass_mainland_china') {
-		push(config.route.rule_set, {
-			type: 'remote',
-			tag: 'geoip-cn',
-			format: 'binary',
-			url: 'https://fastly.jsdelivr.net/gh/1715173329/IPCIDR-CHINA@rule-set/cn.srs',
-			download_detour: 'direct-out'
-		});
-		push(config.route.rule_set, {
-			type: 'remote',
-			tag: 'geosite-cn',
-			format: 'binary',
-			url: 'https://fastly.jsdelivr.net/gh/1715173329/sing-geosite@rule-set-unstable/geosite-geolocation-cn.srs',
-			download_detour: 'direct-out'
-		});
-		push(config.route.rule_set, {
-			type: 'remote',
-			tag: 'geosite-noncn',
-			format: 'binary',
-			url: 'https://fastly.jsdelivr.net/gh/1715173329/sing-geosite@rule-set-unstable/geosite-geolocation-!cn.srs',
-			download_detour: 'direct-out'
-		});
-	}
-
 	if (isEmpty(config.route.rule_set))
 		config.route.rule_set = null;
 }
+
+/* Global Rule Sets (Direct/Proxy list) */
+if (length(direct_domain_list))
+	push(config.route.rule_set, {
+		type: 'inline',
+		tag: 'direct-domain',
+		rules: [
+			{
+				domain_keyword: direct_domain_list,
+			}
+		]
+	});
+
+if (length(proxy_domain_list))
+	push(config.route.rule_set, {
+		type: 'inline',
+		tag: 'proxy-domain',
+		rules: [
+			{
+				domain_keyword: proxy_domain_list,
+			}
+		]
+	});
+
+/* Standard Remote Rule Sets (Always Available for references) */
+push(config.route.rule_set, {
+	type: 'remote',
+	tag: 'cfg-rs_geoip_cn-rule',
+	format: 'binary',
+	url: 'https://fastly.jsdelivr.net/gh/1715173329/IPCIDR-CHINA@rule-set/cn.srs',
+	download_detour: 'direct-out',
+	update_interval: '1d'
+});
+
+push(config.route.rule_set, {
+	type: 'remote',
+	tag: 'cfg-rs_geosite_cn-rule',
+	format: 'binary',
+	url: 'https://fastly.jsdelivr.net/gh/1715173329/sing-geosite@rule-set-unstable/geosite-geolocation-cn.srs',
+	download_detour: 'direct-out',
+	update_interval: '1d'
+});
 
 /* Priority Global Rules (Unified Architecture) */
 uci.foreach(uciconfig, uciroutingrule, (cfg) => {
