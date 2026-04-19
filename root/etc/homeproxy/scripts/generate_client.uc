@@ -611,33 +611,6 @@ if (!isEmpty(main_node)) {
 	if (isEmpty(config.dns.rules))
 		config.dns.rules = null;
 
-	/* Common DNS rule-sets for all modes (v1.4.5) */
-uci.foreach(uciconfig, uciruleset, (cfg) => {
-	if (cfg.enabled !== '1') return null;
-	if (isEmpty(config.dns.rule_set)) config.dns.rule_set = [];
-	push(config.dns.rule_set, {
-		type: cfg.type,
-		tag: 'cfg-' + cfg['.name'] + '-rule',
-		format: cfg.format,
-		path: cfg.path,
-		url: cfg.url,
-		download_detour: get_outbound(cfg.outbound),
-		update_interval: cfg.update_interval
-	});
-});
-
-if (length(direct_domain_list)) {
-	if (isEmpty(config.dns.rule_set)) config.dns.rule_set = [];
-	push(config.dns.rule_set, {
-		type: 'inline',
-		tag: 'direct-domain',
-		rules: [
-			{
-				domain_keyword: direct_domain_list,
-			}
-		]
-	});
-}
 
 config.dns.final = get_resolver(dns_default_server);
 }
